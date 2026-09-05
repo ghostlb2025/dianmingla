@@ -39,7 +39,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\构建V1.ps1
 
 ## 音乐授权
 
-内嵌的 3 首音乐来自 FreePD，采用 CC0 1.0。具体来源见《音乐授权说明.md》。个人使用的 `好运来.mp3` 不属于公开发布内容，已从 Git 跟踪范围排除。
+内嵌的 3 首音乐来自 FreePD，采用 CC0 1.0。具体来源见《音乐授权说明.md》。
 
 ## 许可证
 
