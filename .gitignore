@@ -1,0 +1,24 @@
+# Build outputs and runtime state
+*.exe
+*.pdb
+bin/
+obj/
+.vs/
+settings.json
+error.log
+班级名单.json
+班级名单.json.bak
+点名历史.json
+点名历史.json.bak
+人员名单/
+music/好运来.mp3
+
+# Recovered/decompiled application bundle and local tooling
+教学小助手V5.0.exe_extracted/
+.tools/
+
+# Temporary files
+*.tmp
+~$*
+测试/layout-preview.png
+GitHub公开版/
