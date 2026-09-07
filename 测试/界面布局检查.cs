@@ -43,6 +43,8 @@ internal static class LayoutCheck
             Application.SetCompatibleTextRenderingDefault(false);
 
             Assembly assembly = Assembly.LoadFrom(args[0]);
+            bool versionPassed = assembly.GetName().Version == new Version(1, 0, 1, 0);
+            Console.WriteLine("程序版本为 1.0.1={0}", versionPassed);
             Type formType = assembly.GetType("DianMingLa.MainForm", true);
             using (Form form = (Form)Activator.CreateInstance(formType, true))
             {
@@ -57,7 +59,7 @@ internal static class LayoutCheck
 
             MethodInfo selectClass = formType.GetMethod("SelectClass", BindingFlags.Instance | BindingFlags.NonPublic);
             selectClass.Invoke(form, new object[] { "示例二班" });
-            bool allPassed = true;
+            bool allPassed = versionPassed;
             FieldInfo classesField = formType.GetField("classes", BindingFlags.Instance | BindingFlags.NonPublic);
             IDictionary demoClasses = classesField.GetValue(form) as IDictionary;
             bool demoDataPassed = demoClasses != null && demoClasses.Count == 3

@@ -14,8 +14,8 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("点名啦")]
 [assembly: AssemblyProduct("点名啦")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
 
 namespace DianMingLa
 {
@@ -627,7 +627,7 @@ namespace DianMingLa
 
         private void InitializeWindow()
         {
-            Text = "点名啦 1.0";
+            Text = "点名啦 1.0.1";
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(920, 500);
@@ -1209,7 +1209,7 @@ namespace DianMingLa
 
             trayIcon = new NotifyIcon();
             trayIcon.Icon = (Icon)(Icon ?? SystemIcons.Application).Clone();
-            trayIcon.Text = "点名啦 1.0";
+            trayIcon.Text = "点名啦 1.0.1";
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = false;
             trayIcon.DoubleClick += delegate { RestoreFromTray(); };
