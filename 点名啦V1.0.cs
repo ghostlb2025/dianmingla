@@ -170,7 +170,15 @@ namespace DianMingLa
         }
     }
 
-    internal sealed class RoundedButton : Button
+    internal class QuietButton : Button
+    {
+        protected override bool ShowFocusCues
+        {
+            get { return false; }
+        }
+    }
+
+    internal sealed class RoundedButton : QuietButton
     {
         public int CornerRadius { get; set; }
 
@@ -182,6 +190,8 @@ namespace DianMingLa
             UseVisualStyleBackColor = false;
             Cursor = Cursors.Hand;
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
+            TextAlign = ContentAlignment.MiddleCenter;
+            TabStop = false;
         }
 
         protected override void OnResize(EventArgs e)
@@ -682,7 +692,7 @@ namespace DianMingLa
             TableLayoutPanel content = new TableLayoutPanel();
             content.Dock = DockStyle.Fill;
             content.BackColor = BackgroundColor;
-            content.Padding = new Padding(10, 6, 10, 8);
+            content.Padding = new Padding(10, 6, 2, 8);
             content.RowCount = 3;
             content.ColumnCount = 1;
             content.RowStyles.Add(new RowStyle(SizeType.Absolute, 62F));
@@ -770,24 +780,26 @@ namespace DianMingLa
             Panel bar = new Panel();
             bar.Dock = DockStyle.Fill;
             bar.BackColor = BackgroundColor;
-            bar.Padding = new Padding(0, 7, 0, 0);
+            bar.Margin = Padding.Empty;
+            bar.Padding = Padding.Empty;
 
             drawButton = MakeButton("开始点名", PrimaryColor, Color.White, 176, 44);
             drawButton.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold);
-            drawButton.Location = new Point(0, 6);
+            drawButton.Padding = new Padding(0, 0, 0, 2);
+            drawButton.Location = new Point(0, 5);
             drawButton.Click += DrawButton_Click;
 
             resetButton = MakeButton("重置", Color.White, Color.FromArgb(196, 71, 71), 88, 38);
-            resetButton.Location = new Point(188, 9);
+            resetButton.Location = new Point(188, 8);
             resetButton.Click += ResetButton_Click;
 
             clockLabel = new Label();
-            clockLabel.Font = new Font("Microsoft YaHei UI", 8.5F, FontStyle.Regular);
+            clockLabel.Font = new Font("Microsoft YaHei UI", 8.5F, FontStyle.Bold);
             clockLabel.ForeColor = TextColor;
-            clockLabel.TextAlign = ContentAlignment.MiddleCenter;
+            clockLabel.TextAlign = ContentAlignment.MiddleRight;
             clockLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             clockLabel.Size = new Size(142, 44);
-            clockLabel.Location = new Point(bar.Width - 142, 4);
+            clockLabel.Location = new Point(bar.Width - 142, 5);
 
             bar.Controls.Add(drawButton);
             bar.Controls.Add(resetButton);
@@ -829,6 +841,7 @@ namespace DianMingLa
             miniNameLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
 
             miniDrawButton = MakeButton("开始点名", PrimaryColor, Color.White, 152, 42);
+            miniDrawButton.Padding = new Padding(0, 0, 0, 2);
             miniDrawButton.Location = new Point(18, 124);
             miniDrawButton.Click += DrawButton_Click;
 
@@ -872,7 +885,7 @@ namespace DianMingLa
 
         private static Button MakeWindowButton(string text, Color back, Color fore)
         {
-            Button button = new Button();
+            Button button = new QuietButton();
             button.Text = text;
             button.Dock = DockStyle.Fill;
             button.Margin = Padding.Empty;

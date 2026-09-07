@@ -109,13 +109,13 @@ namespace DianMingLa
             input.Location = new Point(16, 42);
             input.Size = new Size(358, 28);
 
-            Button ok = new Button();
+            Button ok = new QuietButton();
             ok.Text = "确定";
             ok.DialogResult = DialogResult.OK;
             ok.Location = new Point(218, 87);
             ok.Size = new Size(74, 30);
 
-            Button cancel = new Button();
+            Button cancel = new QuietButton();
             cancel.Text = "取消";
             cancel.DialogResult = DialogResult.Cancel;
             cancel.Location = new Point(300, 87);
@@ -249,7 +249,7 @@ namespace DianMingLa
 
         private Button ActionButton(string text, EventHandler action)
         {
-            Button button = new Button();
+            Button button = new QuietButton();
             button.Text = text;
             button.AutoSize = true;
             button.MinimumSize = new Size(74, 30);
@@ -467,7 +467,7 @@ namespace DianMingLa
 
         private Button MakeButton(string text, EventHandler click)
         {
-            Button button = new Button();
+            Button button = new QuietButton();
             button.Text = text;
             button.AutoSize = true;
             button.MinimumSize = new Size(88, 30);

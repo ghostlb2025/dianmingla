@@ -91,6 +91,31 @@ internal static class LayoutCheck
                 && topMostButton.Font.Size >= 11.5F;
             Console.WriteLine("四个功能按钮等宽；置顶使用放大的系统窗口图标={0}", equalButtonsPassed);
             allPassed = allPassed && equalButtonsPassed;
+            Button[] allButtons = FindControls<Button>(form);
+            PropertyInfo showFocusCuesProperty = typeof(Control).GetProperty(
+                "ShowFocusCues", BindingFlags.Instance | BindingFlags.NonPublic);
+            bool focusCuePassed = showFocusCuesProperty != null && allButtons.Length > 0
+                && allButtons.All(button => !(bool)showFocusCuesProperty.GetValue(button, null));
+            Console.WriteLine("主界面全部按钮不绘制焦点框={0}", focusCuePassed);
+            allPassed = allPassed && focusCuePassed;
+
+            FieldInfo drawButtonField = formType.GetField("drawButton", BindingFlags.Instance | BindingFlags.NonPublic);
+            Button mainDrawButton = drawButtonField.GetValue(form) as Button;
+            bool drawButtonPassed = mainDrawButton != null && mainDrawButton.Parent != null
+                && mainDrawButton.Bottom <= mainDrawButton.Parent.ClientSize.Height - 2
+                && mainDrawButton.Padding.Bottom >= 2
+                && mainDrawButton.TextAlign == ContentAlignment.MiddleCenter;
+            Console.WriteLine("开始点名按钮文字完整且四周留有空间={0}", drawButtonPassed);
+            allPassed = allPassed && drawButtonPassed;
+
+            FieldInfo clockPositionField = formType.GetField("clockLabel", BindingFlags.Instance | BindingFlags.NonPublic);
+            Label clockPositionLabel = clockPositionField.GetValue(form) as Label;
+            Rectangle clockBounds = clockPositionLabel == null ? Rectangle.Empty : BoundsRelativeTo(clockPositionLabel, form);
+            bool clockPositionPassed = clockPositionLabel != null && clockPositionLabel.Font.Bold
+                && clockPositionLabel.TextAlign == ContentAlignment.MiddleRight
+                && form.ClientSize.Width - clockBounds.Right <= 6;
+            Console.WriteLine("日期时间靠右且使用稍粗字体={0}", clockPositionPassed);
+            allPassed = allPassed && clockPositionPassed;
             Size[] testSizes = new Size[] { new Size(920, 500) };
 
             foreach (Size testSize in testSizes)
