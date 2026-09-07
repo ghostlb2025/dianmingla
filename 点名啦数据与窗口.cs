@@ -148,7 +148,7 @@ namespace DianMingLa
             MinimumSize = new Size(680, 440);
             Size = new Size(760, 520);
             Font = new Font("Microsoft YaHei UI", 9.5F);
-            BackColor = Color.FromArgb(244, 247, 252);
+            BackColor = Color.FromArgb(243, 246, 250);
 
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
@@ -189,13 +189,13 @@ namespace DianMingLa
             help.Text = "每行一个姓名，也可直接粘贴 Excel 中的一列";
             help.Dock = DockStyle.Top;
             help.Height = 28;
-            help.ForeColor = Color.FromArgb(95, 108, 130);
+            help.ForeColor = Color.FromArgb(102, 112, 133);
 
             countLabel = new Label();
             countLabel.Dock = DockStyle.Bottom;
             countLabel.Height = 26;
             countLabel.TextAlign = ContentAlignment.MiddleLeft;
-            countLabel.ForeColor = Color.FromArgb(95, 108, 130);
+            countLabel.ForeColor = Color.FromArgb(102, 112, 133);
 
             FlowLayoutPanel nameActions = new FlowLayoutPanel();
             nameActions.Dock = DockStyle.Bottom;
@@ -224,8 +224,15 @@ namespace DianMingLa
             Button cancel = ActionButton("取消", null);
             cancel.DialogResult = DialogResult.Cancel;
             Button save = ActionButton("保存", SaveAndClose);
-            save.BackColor = Color.FromArgb(43, 103, 246);
+            save.BackColor = Color.FromArgb(47, 107, 255);
             save.ForeColor = Color.White;
+            RoundedButton saveButton = save as RoundedButton;
+            if (saveButton != null)
+            {
+                saveButton.BorderColor = Color.Transparent;
+                saveButton.HoverBackColor = Color.FromArgb(36, 91, 224);
+                saveButton.PressedBackColor = Color.FromArgb(28, 73, 184);
+            }
             footer.Controls.Add(cancel);
             footer.Controls.Add(save);
 
@@ -249,13 +256,15 @@ namespace DianMingLa
 
         private Button ActionButton(string text, EventHandler action)
         {
-            Button button = new QuietButton();
+            RoundedButton button = new RoundedButton();
             button.Text = text;
             button.AutoSize = true;
             button.MinimumSize = new Size(74, 30);
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderColor = Color.FromArgb(215, 224, 238);
             button.BackColor = Color.White;
+            button.ForeColor = Color.FromArgb(31, 42, 61);
+            button.BorderColor = Color.FromArgb(221, 229, 239);
+            button.HoverBackColor = Color.FromArgb(231, 237, 247);
+            button.PressedBackColor = Color.FromArgb(220, 230, 245);
             if (action != null) button.Click += action;
             return button;
         }
@@ -362,8 +371,8 @@ namespace DianMingLa
         {
             int index = classList.SelectedIndex;
             if (index < 0) return;
-            if (MessageBox.Show(this, "确定删除“" + Classes[index].Name + "”吗？\n历史记录不会被删除。",
-                "删除班级", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (!ConfirmDialog.Confirm(this, "确定删除“" + Classes[index].Name + "”吗？\n历史记录不会被删除。",
+                "删除班级", "确认删除")) return;
             Classes.RemoveAt(index);
             editingIndex = -1;
             RefreshClassList();
@@ -431,6 +440,7 @@ namespace DianMingLa
             Size = new Size(720, 480);
             MinimumSize = new Size(600, 380);
             Font = new Font("Microsoft YaHei UI", 9.5F);
+            BackColor = Color.FromArgb(243, 246, 250);
 
             grid = new DataGridView();
             grid.Dock = DockStyle.Fill;
@@ -467,10 +477,15 @@ namespace DianMingLa
 
         private Button MakeButton(string text, EventHandler click)
         {
-            Button button = new QuietButton();
+            RoundedButton button = new RoundedButton();
             button.Text = text;
             button.AutoSize = true;
             button.MinimumSize = new Size(88, 30);
+            button.BackColor = Color.White;
+            button.ForeColor = Color.FromArgb(31, 42, 61);
+            button.BorderColor = Color.FromArgb(221, 229, 239);
+            button.HoverBackColor = Color.FromArgb(231, 237, 247);
+            button.PressedBackColor = Color.FromArgb(220, 230, 245);
             button.Click += click;
             return button;
         }
@@ -503,8 +518,8 @@ namespace DianMingLa
 
         private void ClearHistory(object sender, EventArgs e)
         {
-            if (MessageBox.Show(this, "确定清空全部点名历史吗？此操作不能撤销。", "清空记录",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            if (!ConfirmDialog.Confirm(this, "确定清空全部点名历史吗？此操作不能撤销。", "清空记录",
+                "确认清空")) return;
             entries.Clear();
             grid.DataSource = new List<HistoryEntry>();
             WasCleared = true;

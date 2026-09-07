@@ -117,30 +117,30 @@ namespace DianMingLa
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
             Color fill = Color.White;
-            Color border = Color.FromArgb(219, 228, 240);
-            Color nameColor = Color.FromArgb(33, 46, 66);
-            Color statusColor = Color.FromArgb(117, 130, 150);
+            Color border = Color.FromArgb(221, 229, 239);
+            Color nameColor = Color.FromArgb(31, 42, 61);
+            Color statusColor = Color.FromArgb(102, 112, 133);
 
             if (visualState == StudentCardState.Rolling)
             {
-                fill = Color.FromArgb(255, 243, 199);
-                border = Color.FromArgb(245, 167, 36);
-                nameColor = Color.FromArgb(157, 91, 0);
-                statusColor = Color.FromArgb(190, 112, 0);
+                fill = Color.FromArgb(255, 244, 214);
+                border = Color.FromArgb(168, 100, 8);
+                nameColor = Color.FromArgb(168, 100, 8);
+                statusColor = Color.FromArgb(168, 100, 8);
             }
             else if (visualState == StudentCardState.Selected)
             {
-                fill = Color.FromArgb(220, 246, 235);
-                border = Color.FromArgb(28, 174, 117);
-                nameColor = Color.FromArgb(8, 111, 72);
-                statusColor = Color.FromArgb(21, 143, 94);
+                fill = Color.FromArgb(232, 247, 240);
+                border = Color.FromArgb(18, 128, 92);
+                nameColor = Color.FromArgb(18, 128, 92);
+                statusColor = Color.FromArgb(18, 128, 92);
             }
             else if (visualState == StudentCardState.Drawn)
             {
-                fill = Color.FromArgb(243, 246, 250);
-                border = Color.FromArgb(225, 231, 239);
-                nameColor = Color.FromArgb(145, 154, 168);
-                statusColor = Color.FromArgb(168, 176, 188);
+                fill = Color.FromArgb(241, 244, 248);
+                border = Color.FromArgb(228, 231, 236);
+                nameColor = Color.FromArgb(152, 162, 179);
+                statusColor = Color.FromArgb(152, 162, 179);
             }
 
             Rectangle rect = new Rectangle(1, 1, Width - 3, Height - 3);
@@ -180,11 +180,24 @@ namespace DianMingLa
 
     internal sealed class RoundedButton : QuietButton
     {
+        private bool mouseOver;
+        private bool mouseDown;
+
         public int CornerRadius { get; set; }
+        public Color BorderColor { get; set; }
+        public Color HoverBackColor { get; set; }
+        public Color HoverForeColor { get; set; }
+        public Color PressedBackColor { get; set; }
+        public Color PressedForeColor { get; set; }
 
         public RoundedButton()
         {
             CornerRadius = 10;
+            BorderColor = Color.Transparent;
+            HoverBackColor = Color.Empty;
+            HoverForeColor = Color.Empty;
+            PressedBackColor = Color.Empty;
+            PressedForeColor = Color.Empty;
             FlatStyle = FlatStyle.Flat;
             FlatAppearance.BorderSize = 0;
             UseVisualStyleBackColor = false;
@@ -192,6 +205,8 @@ namespace DianMingLa
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
             TextAlign = ContentAlignment.MiddleCenter;
             TabStop = false;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         }
 
         protected override void OnResize(EventArgs e)
@@ -202,6 +217,97 @@ namespace DianMingLa
             {
                 Region = new Region(path);
             }
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            mouseOver = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            mouseOver = false;
+            mouseDown = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left) mouseDown = true;
+            Invalidate();
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            mouseDown = false;
+            Invalidate();
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            Invalidate();
+            base.OnEnabledChanged(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            Rectangle bounds = new Rectangle(0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1));
+            Color fill = BackColor;
+            Color text = ForeColor;
+
+            if (!Enabled)
+            {
+                fill = Blend(BackColor, Color.White, 55);
+                text = Color.FromArgb(145, 156, 174);
+            }
+            else if (mouseDown)
+            {
+                fill = PressedBackColor.IsEmpty ? Blend(BackColor, Color.Black, 9) : PressedBackColor;
+                if (!PressedForeColor.IsEmpty) text = PressedForeColor;
+            }
+            else if (mouseOver)
+            {
+                fill = HoverBackColor.IsEmpty
+                    ? Blend(BackColor, BackColor.GetBrightness() > 0.92F
+                        ? Color.FromArgb(210, 220, 236) : Color.White, 7)
+                    : HoverBackColor;
+                if (!HoverForeColor.IsEmpty) text = HoverForeColor;
+            }
+
+            using (GraphicsPath path = RoundedRect(bounds, CornerRadius))
+            using (SolidBrush brush = new SolidBrush(fill))
+            {
+                e.Graphics.FillPath(brush, path);
+                if (BorderColor.A > 0)
+                {
+                    using (Pen pen = new Pen(BorderColor, 1F)) e.Graphics.DrawPath(pen, path);
+                }
+            }
+
+            Rectangle textBounds = new Rectangle(
+                Padding.Left,
+                Padding.Top,
+                Math.Max(1, ClientSize.Width - Padding.Horizontal),
+                Math.Max(1, ClientSize.Height - Padding.Vertical));
+            TextRenderer.DrawText(e.Graphics, Text, Font, textBounds, text,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis |
+                TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        }
+
+        private static Color Blend(Color source, Color target, int targetPercent)
+        {
+            int sourcePercent = 100 - targetPercent;
+            return Color.FromArgb(source.A,
+                (source.R * sourcePercent + target.R * targetPercent) / 100,
+                (source.G * sourcePercent + target.G * targetPercent) / 100,
+                (source.B * sourcePercent + target.B * targetPercent) / 100);
         }
 
         private static GraphicsPath RoundedRect(Rectangle rect, int radius)
@@ -217,6 +323,115 @@ namespace DianMingLa
         }
     }
 
+    internal sealed class ConfirmDialog : Form
+    {
+        public ConfirmDialog(string title, string message, string confirmText)
+        {
+            Text = title;
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            Size = new Size(420, 184);
+            MinimumSize = Size;
+            MaximumSize = Size;
+            Padding = new Padding(1);
+            BackColor = Color.FromArgb(221, 229, 239);
+            Font = new Font("Microsoft YaHei UI", 9.5F);
+
+            TableLayoutPanel root = new TableLayoutPanel();
+            root.Dock = DockStyle.Fill;
+            root.BackColor = Color.White;
+            root.ColumnCount = 1;
+            root.RowCount = 3;
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
+
+            Panel header = new Panel();
+            header.Dock = DockStyle.Fill;
+            header.BackColor = Color.White;
+
+            Label titleLabel = new Label();
+            titleLabel.Text = title;
+            titleLabel.Dock = DockStyle.Fill;
+            titleLabel.Padding = new Padding(18, 0, 0, 0);
+            titleLabel.TextAlign = ContentAlignment.MiddleLeft;
+            titleLabel.Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold);
+            titleLabel.ForeColor = Color.FromArgb(31, 42, 61);
+
+            QuietButton close = new QuietButton();
+            close.Text = "\uE8BB";
+            close.Dock = DockStyle.Right;
+            close.Width = 44;
+            close.FlatStyle = FlatStyle.Flat;
+            close.FlatAppearance.BorderSize = 0;
+            close.FlatAppearance.MouseOverBackColor = Color.FromArgb(196, 43, 28);
+            close.FlatAppearance.MouseDownBackColor = Color.FromArgb(168, 47, 47);
+            close.BackColor = Color.White;
+            close.ForeColor = Color.FromArgb(31, 42, 61);
+            close.Font = new Font("Segoe MDL2 Assets", 9.5F);
+            close.TabStop = false;
+            close.DialogResult = DialogResult.Cancel;
+            close.MouseEnter += delegate { close.ForeColor = Color.White; };
+            close.MouseLeave += delegate { close.ForeColor = Color.FromArgb(31, 42, 61); };
+
+            header.Controls.Add(titleLabel);
+            header.Controls.Add(close);
+
+            Label messageLabel = new Label();
+            messageLabel.Text = message;
+            messageLabel.Dock = DockStyle.Fill;
+            messageLabel.Padding = new Padding(22, 8, 22, 8);
+            messageLabel.TextAlign = ContentAlignment.MiddleLeft;
+            messageLabel.ForeColor = Color.FromArgb(52, 64, 84);
+
+            FlowLayoutPanel footer = new FlowLayoutPanel();
+            footer.Dock = DockStyle.Fill;
+            footer.FlowDirection = FlowDirection.RightToLeft;
+            footer.WrapContents = false;
+            footer.Padding = new Padding(12, 10, 12, 8);
+            footer.BackColor = Color.FromArgb(247, 249, 252);
+
+            RoundedButton cancel = new RoundedButton();
+            cancel.Text = "取消";
+            cancel.Size = new Size(88, 38);
+            cancel.Margin = new Padding(8, 0, 0, 0);
+            cancel.BackColor = Color.White;
+            cancel.ForeColor = Color.FromArgb(102, 112, 133);
+            cancel.BorderColor = Color.FromArgb(221, 229, 239);
+            cancel.HoverBackColor = Color.FromArgb(231, 237, 247);
+            cancel.PressedBackColor = Color.FromArgb(220, 230, 245);
+            cancel.DialogResult = DialogResult.Cancel;
+
+            RoundedButton confirm = new RoundedButton();
+            confirm.Text = confirmText;
+            confirm.Size = new Size(96, 38);
+            confirm.Margin = Padding.Empty;
+            confirm.BackColor = Color.FromArgb(196, 61, 61);
+            confirm.ForeColor = Color.White;
+            confirm.HoverBackColor = Color.FromArgb(168, 47, 47);
+            confirm.PressedBackColor = Color.FromArgb(143, 37, 37);
+            confirm.DialogResult = DialogResult.Yes;
+
+            footer.Controls.Add(cancel);
+            footer.Controls.Add(confirm);
+            root.Controls.Add(header, 0, 0);
+            root.Controls.Add(messageLabel, 0, 1);
+            root.Controls.Add(footer, 0, 2);
+            Controls.Add(root);
+            AcceptButton = cancel;
+            CancelButton = cancel;
+        }
+
+        public static bool Confirm(IWin32Window owner, string message, string title, string confirmText)
+        {
+            using (ConfirmDialog dialog = new ConfirmDialog(title, message, confirmText))
+            {
+                return dialog.ShowDialog(owner) == DialogResult.Yes;
+            }
+        }
+    }
+
     internal sealed class MainForm : Form
     {
         private const int WmNcLButtonDown = 0x00A1;
@@ -228,12 +443,19 @@ namespace DianMingLa
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
 
-        private static readonly Color BackgroundColor = Color.FromArgb(242, 246, 252);
-        private static readonly Color PrimaryColor = Color.FromArgb(43, 103, 246);
-        private static readonly Color PrimaryDark = Color.FromArgb(28, 76, 194);
-        private static readonly Color TextColor = Color.FromArgb(31, 44, 63);
-        private static readonly Color MutedColor = Color.FromArgb(112, 126, 148);
-        private static readonly Color SidebarColor = Color.FromArgb(232, 239, 252);
+        private static readonly Color BackgroundColor = Color.FromArgb(243, 246, 250);
+        private static readonly Color SurfaceColor = Color.White;
+        private static readonly Color SecondarySurfaceColor = Color.FromArgb(241, 245, 251);
+        private static readonly Color ResultSurfaceColor = Color.FromArgb(247, 250, 255);
+        private static readonly Color BorderColor = Color.FromArgb(221, 229, 239);
+        private static readonly Color PrimaryColor = Color.FromArgb(47, 107, 255);
+        private static readonly Color PrimaryHover = Color.FromArgb(36, 91, 224);
+        private static readonly Color PrimaryDark = Color.FromArgb(28, 73, 184);
+        private static readonly Color TextColor = Color.FromArgb(31, 42, 61);
+        private static readonly Color MutedColor = Color.FromArgb(102, 112, 133);
+        private static readonly Color SidebarColor = Color.FromArgb(247, 249, 252);
+        private static readonly Color DangerColor = Color.FromArgb(196, 61, 61);
+        private static readonly Color DangerSurfaceColor = Color.FromArgb(253, 236, 236);
 
         private readonly Dictionary<string, List<StudentInfo>> classes;
         private readonly Dictionary<string, RoundedButton> classButtons;
@@ -397,7 +619,7 @@ namespace DianMingLa
         {
             TableLayoutPanel toolbar = new TableLayoutPanel();
             toolbar.Dock = DockStyle.Fill;
-            toolbar.BackColor = Color.White;
+            toolbar.BackColor = SurfaceColor;
             toolbar.Padding = new Padding(10, 6, 0, 6);
             toolbar.ColumnCount = 9;
             toolbar.RowCount = 1;
@@ -418,7 +640,7 @@ namespace DianMingLa
             classSelector.Margin = new Padding(0, 1, 8, 1);
             classSelector.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
             classSelector.FlatStyle = FlatStyle.Flat;
-            classSelector.BackColor = Color.FromArgb(246, 248, 252);
+            classSelector.BackColor = Color.FromArgb(247, 249, 252);
             classSelector.DrawMode = DrawMode.OwnerDrawFixed;
             classSelector.ItemHeight = 25;
             classSelector.TabStop = false;
@@ -426,7 +648,7 @@ namespace DianMingLa
             {
                 if (e.Index < 0) return;
                 bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-                using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(228, 237, 255) : classSelector.BackColor))
+                using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(234, 241, 255) : classSelector.BackColor))
                     e.Graphics.FillRectangle(background, e.Bounds);
                 TextRenderer.DrawText(e.Graphics, classSelector.Items[e.Index].ToString(), classSelector.Font,
                     new Rectangle(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height), TextColor,
@@ -444,19 +666,19 @@ namespace DianMingLa
             dragSurface.MouseDown += TitleBar_MouseDown;
             toolbar.Controls.Add(dragSurface, 1, 0);
 
-            RoundedButton rosterButton = MakeButton("名单", Color.FromArgb(242, 246, 252), TextColor, 64, 34);
+            RoundedButton rosterButton = MakeButton("名单", SecondarySurfaceColor, TextColor, 64, 34);
             rosterButton.Dock = DockStyle.Fill;
             rosterButton.Margin = new Padding(3, 0, 3, 0);
             rosterButton.Click += ShowRosterManager;
             toolbar.Controls.Add(rosterButton, 2, 0);
 
-            RoundedButton historyButton = MakeButton("记录", Color.FromArgb(242, 246, 252), TextColor, 64, 34);
+            RoundedButton historyButton = MakeButton("记录", SecondarySurfaceColor, TextColor, 64, 34);
             historyButton.Dock = DockStyle.Fill;
             historyButton.Margin = new Padding(3, 0, 3, 0);
             historyButton.Click += ShowHistory;
             toolbar.Controls.Add(historyButton, 3, 0);
 
-            musicMenuButton = MakeButton("音乐", Color.FromArgb(242, 246, 252), TextColor, 74, 34);
+            musicMenuButton = MakeButton("音乐", SecondarySurfaceColor, TextColor, 74, 34);
             musicMenuButton.Dock = DockStyle.Fill;
             musicMenuButton.Margin = new Padding(3, 0, 3, 0);
             musicMenuButton.Click += delegate
@@ -469,7 +691,7 @@ namespace DianMingLa
             musicMenu = new ContextMenuStrip();
             musicMenu.Font = new Font("Microsoft YaHei UI", 9.5F);
 
-            miniModeButton = MakeButton("迷你模式", Color.FromArgb(232, 238, 249), TextColor, 80, 34);
+            miniModeButton = MakeButton("迷你模式", SecondarySurfaceColor, TextColor, 80, 34);
             miniModeButton.Dock = DockStyle.Fill;
             miniModeButton.Margin = new Padding(3, 0, 3, 0);
             miniModeButton.Click += delegate { EnterMiniMode(); };
@@ -480,7 +702,7 @@ namespace DianMingLa
 
             topMostButton = MakeWindowButton("\uE718", Color.White, TextColor);
             topMostButton.Font = new Font("Segoe MDL2 Assets", 11.5F, FontStyle.Regular);
-            topMostButton.ForeColor = Color.FromArgb(64, 80, 102);
+            topMostButton.ForeColor = MutedColor;
             topMostButton.AccessibleName = "窗口置顶";
             toolTip.SetToolTip(topMostButton, "窗口置顶");
             topMostButton.Click += delegate { topMostCheck.Checked = !topMostCheck.Checked; };
@@ -491,8 +713,8 @@ namespace DianMingLa
             toolbar.Controls.Add(minimize, 7, 0);
 
             Button close = MakeWindowButton("\uE8BB", Color.White, TextColor);
-            close.FlatAppearance.MouseOverBackColor = Color.FromArgb(220, 65, 65);
-            close.FlatAppearance.MouseDownBackColor = Color.FromArgb(190, 45, 45);
+            close.FlatAppearance.MouseOverBackColor = Color.FromArgb(196, 43, 28);
+            close.FlatAppearance.MouseDownBackColor = Color.FromArgb(168, 47, 47);
             close.MouseEnter += delegate { close.ForeColor = Color.White; };
             close.MouseLeave += delegate { close.ForeColor = TextColor; };
             close.Click += delegate { Close(); };
@@ -709,7 +931,7 @@ namespace DianMingLa
         {
             Panel card = new Panel();
             card.Dock = DockStyle.Fill;
-            card.BackColor = Color.White;
+            card.BackColor = ResultSurfaceColor;
             card.Margin = new Padding(0, 0, 0, 7);
             card.Padding = new Padding(10, 3, 10, 3);
 
@@ -751,7 +973,7 @@ namespace DianMingLa
         {
             Panel roster = new Panel();
             roster.Dock = DockStyle.Fill;
-            roster.BackColor = Color.White;
+            roster.BackColor = SurfaceColor;
             roster.Padding = new Padding(8, 5, 8, 7);
             roster.Margin = new Padding(0);
 
@@ -767,7 +989,7 @@ namespace DianMingLa
             studentFlow.AutoScroll = false;
             studentFlow.WrapContents = true;
             studentFlow.FlowDirection = FlowDirection.LeftToRight;
-            studentFlow.BackColor = Color.White;
+            studentFlow.BackColor = SurfaceColor;
             studentFlow.Padding = new Padding(0);
             studentFlow.Resize += delegate { ResizeStudentCards(); };
 
@@ -786,10 +1008,17 @@ namespace DianMingLa
             drawButton = MakeButton("开始点名", PrimaryColor, Color.White, 176, 44);
             drawButton.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold);
             drawButton.Padding = new Padding(0, 0, 0, 2);
+            drawButton.HoverBackColor = PrimaryHover;
+            drawButton.PressedBackColor = PrimaryDark;
             drawButton.Location = new Point(0, 5);
             drawButton.Click += DrawButton_Click;
 
-            resetButton = MakeButton("重置", Color.White, Color.FromArgb(196, 71, 71), 88, 38);
+            resetButton = MakeButton("重置", Color.FromArgb(247, 249, 252), MutedColor, 88, 38);
+            resetButton.BorderColor = BorderColor;
+            resetButton.HoverBackColor = DangerSurfaceColor;
+            resetButton.HoverForeColor = DangerColor;
+            resetButton.PressedBackColor = Color.FromArgb(248, 218, 218);
+            resetButton.PressedForeColor = Color.FromArgb(168, 47, 47);
             resetButton.Location = new Point(188, 8);
             resetButton.Click += ResetButton_Click;
 
@@ -880,6 +1109,16 @@ namespace DianMingLa
             button.BackColor = back;
             button.ForeColor = fore;
             button.Size = new Size(width, height);
+            if (back.ToArgb() == PrimaryColor.ToArgb())
+            {
+                button.HoverBackColor = PrimaryHover;
+                button.PressedBackColor = PrimaryDark;
+            }
+            else if (back.ToArgb() == SecondarySurfaceColor.ToArgb())
+            {
+                button.HoverBackColor = Color.FromArgb(231, 237, 247);
+                button.PressedBackColor = Color.FromArgb(220, 230, 245);
+            }
             return button;
         }
 
@@ -891,8 +1130,8 @@ namespace DianMingLa
             button.Margin = Padding.Empty;
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderSize = 0;
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(235, 239, 246);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(220, 227, 238);
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(241, 245, 251);
+            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(220, 230, 245);
             button.BackColor = back;
             button.ForeColor = fore;
             button.Font = new Font("Segoe MDL2 Assets", 9.5F, FontStyle.Regular);
@@ -1261,7 +1500,7 @@ namespace DianMingLa
             if (classSelector != null) classSelector.Enabled = false;
             foreach (RoundedButton button in classButtons.Values) button.Enabled = false;
             resultHintLabel.Text = "正在随机点名……";
-            currentNameLabel.ForeColor = Color.FromArgb(224, 135, 22);
+            currentNameLabel.ForeColor = Color.FromArgb(168, 100, 8);
             miniStatusLabel.Text = currentClass + " · 正在随机点名……";
 
             StartMusic(false);
@@ -1356,7 +1595,7 @@ namespace DianMingLa
             });
 
             currentNameLabel.Text = finalTarget;
-            currentNameLabel.ForeColor = Color.FromArgb(19, 151, 101);
+            currentNameLabel.ForeColor = Color.FromArgb(18, 128, 92);
             resultHintLabel.Text = "本次点到";
             miniNameLabel.Text = finalTarget;
             miniStatusLabel.Text = currentClass + " · 本次点到";
@@ -1433,10 +1672,9 @@ namespace DianMingLa
         private void ResetButton_Click(object sender, EventArgs e)
         {
             if (String.IsNullOrEmpty(currentClass) || drawing) return;
-            DialogResult answer = MessageBox.Show(this,
+            if (!ConfirmDialog.Confirm(this,
                 "确定要清空“" + currentClass + "”本轮的点名记录吗？",
-                "重置", MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
-            if (answer != DialogResult.Yes) return;
+                "重置", "确认清空")) return;
 
             foreach (StudentInfo student in classes[currentClass]) student.Count = 0;
             selectedName = null;
@@ -1470,10 +1708,10 @@ namespace DianMingLa
             if (topMostButton != null)
             {
                 topMostButton.Text = topMostCheck.Checked ? "\uE840" : "\uE718";
-                topMostButton.BackColor = Color.White;
+                topMostButton.BackColor = SurfaceColor;
                 topMostButton.ForeColor = topMostCheck.Checked
-                    ? Color.FromArgb(22, 128, 91)
-                    : Color.FromArgb(64, 80, 102);
+                    ? PrimaryColor
+                    : MutedColor;
                 toolTip.SetToolTip(topMostButton, topMostCheck.Checked ? "取消窗口置顶" : "窗口置顶");
             }
             settings.TopMostEnabled = topMostCheck.Checked;

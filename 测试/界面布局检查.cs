@@ -99,6 +99,26 @@ internal static class LayoutCheck
             Console.WriteLine("主界面全部按钮不绘制焦点框={0}", focusCuePassed);
             allPassed = allPassed && focusCuePassed;
 
+            FieldInfo resetButtonField = formType.GetField("resetButton", BindingFlags.Instance | BindingFlags.NonPublic);
+            Button focusedResetButton = resetButtonField.GetValue(form) as Button;
+            Button[] focusBorderButtons = featureButtons
+                .Concat(new Button[] { focusedResetButton })
+                .Where(button => button != null).ToArray();
+            bool noRedFocusBorderPassed = focusBorderButtons.Length == 5;
+            foreach (Button focusButton in focusBorderButtons)
+            {
+                noRedFocusBorderPassed = noRedFocusBorderPassed && focusButton.Focus();
+                Application.DoEvents();
+                using (Bitmap focusedPreview = new Bitmap(focusButton.Width, focusButton.Height))
+                {
+                    focusButton.DrawToBitmap(focusedPreview,
+                        new Rectangle(Point.Empty, focusButton.Size));
+                    noRedFocusBorderPassed = noRedFocusBorderPassed && !HasRedEdgePixels(focusedPreview);
+                }
+            }
+            Console.WriteLine("名单、记录、音乐、迷你模式、重置获得焦点时边缘均无红框={0}", noRedFocusBorderPassed);
+            allPassed = allPassed && noRedFocusBorderPassed;
+
             FieldInfo drawButtonField = formType.GetField("drawButton", BindingFlags.Instance | BindingFlags.NonPublic);
             Button mainDrawButton = drawButtonField.GetValue(form) as Button;
             bool drawButtonPassed = mainDrawButton != null && mainDrawButton.Parent != null
@@ -116,6 +136,30 @@ internal static class LayoutCheck
                 && form.ClientSize.Width - clockBounds.Right <= 6;
             Console.WriteLine("日期时间靠右且使用稍粗字体={0}", clockPositionPassed);
             allPassed = allPassed && clockPositionPassed;
+
+            bool palettePassed = form.BackColor == Color.FromArgb(243, 246, 250)
+                && centeredName.Parent.BackColor == Color.FromArgb(247, 250, 255)
+                && mainDrawButton.BackColor == Color.FromArgb(47, 107, 255)
+                && focusedResetButton.ForeColor == Color.FromArgb(102, 112, 133)
+                && focusedResetButton.BackColor == Color.FromArgb(247, 249, 252);
+            Console.WriteLine("新版雾白、浅蓝、主蓝和中性重置配色已生效={0}", palettePassed);
+            allPassed = allPassed && palettePassed;
+
+            Type confirmDialogType = assembly.GetType("DianMingLa.ConfirmDialog", true);
+            using (Form confirmDialog = (Form)Activator.CreateInstance(confirmDialogType,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
+                new object[] { "重置", "确认清空本轮记录吗？", "确认清空" }, null))
+            {
+                Button cancelConfirm = FindControls<Button>(confirmDialog).FirstOrDefault(button => button.Text == "取消");
+                Button dangerConfirm = FindControls<Button>(confirmDialog).FirstOrDefault(button => button.Text == "确认清空");
+                bool confirmDialogPassed = confirmDialog.FormBorderStyle == FormBorderStyle.None
+                    && cancelConfirm != null && dangerConfirm != null
+                    && confirmDialog.AcceptButton == cancelConfirm && confirmDialog.CancelButton == cancelConfirm
+                    && dangerConfirm.BackColor == Color.FromArgb(196, 61, 61)
+                    && dangerConfirm.ForeColor == Color.White;
+                Console.WriteLine("危险操作使用统一确认窗且默认选择取消={0}", confirmDialogPassed);
+                allPassed = allPassed && confirmDialogPassed;
+            }
             Size[] testSizes = new Size[] { new Size(920, 500) };
 
             foreach (Size testSize in testSizes)
@@ -352,5 +396,21 @@ internal static class LayoutCheck
             parent = parent.Parent;
         }
         return new Rectangle(point, control.Size);
+    }
+
+    private static bool HasRedEdgePixels(Bitmap bitmap)
+    {
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                bool edge = x <= 2 || y <= 2 || x >= bitmap.Width - 3 || y >= bitmap.Height - 3;
+                if (!edge) continue;
+                Color pixel = bitmap.GetPixel(x, y);
+                if (pixel.R >= 150 && pixel.R > pixel.G * 1.4 && pixel.R > pixel.B * 1.4)
+                    return true;
+            }
+        }
+        return false;
     }
 }
