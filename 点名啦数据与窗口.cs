@@ -224,14 +224,14 @@ namespace DianMingLa
             Button cancel = ActionButton("取消", null);
             cancel.DialogResult = DialogResult.Cancel;
             Button save = ActionButton("保存", SaveAndClose);
-            save.BackColor = Color.FromArgb(47, 107, 255);
+            save.BackColor = Color.FromArgb(91, 75, 206);
             save.ForeColor = Color.White;
             RoundedButton saveButton = save as RoundedButton;
             if (saveButton != null)
             {
                 saveButton.BorderColor = Color.Transparent;
-                saveButton.HoverBackColor = Color.FromArgb(36, 91, 224);
-                saveButton.PressedBackColor = Color.FromArgb(28, 73, 184);
+                saveButton.HoverBackColor = Color.FromArgb(78, 63, 194);
+                saveButton.PressedBackColor = Color.FromArgb(64, 50, 166);
             }
             footer.Controls.Add(cancel);
             footer.Controls.Add(save);

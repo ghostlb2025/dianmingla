@@ -107,16 +107,22 @@ internal static class LayoutCheck
             bool noRedFocusBorderPassed = focusBorderButtons.Length == 5;
             foreach (Button focusButton in focusBorderButtons)
             {
-                noRedFocusBorderPassed = noRedFocusBorderPassed && focusButton.Focus();
+                bool acceptedFocus = focusButton.Focus();
                 Application.DoEvents();
                 using (Bitmap focusedPreview = new Bitmap(focusButton.Width, focusButton.Height))
                 {
                     focusButton.DrawToBitmap(focusedPreview,
                         new Rectangle(Point.Empty, focusButton.Size));
-                    noRedFocusBorderPassed = noRedFocusBorderPassed && !HasRedEdgePixels(focusedPreview);
+                    bool redEdge = HasRedEdgePixels(focusedPreview);
+                    bool blueEdge = HasBlueEdgePixels(focusedPreview);
+                    Console.WriteLine("焦点检查“{0}”：接受焦点={1}，红边={2}，蓝边={3}",
+                        focusButton.Text, acceptedFocus || focusButton.Focused, redEdge, blueEdge);
+                    noRedFocusBorderPassed = noRedFocusBorderPassed
+                        && !focusButton.Focused
+                        && !redEdge && !blueEdge;
                 }
             }
-            Console.WriteLine("名单、记录、音乐、迷你模式、重置获得焦点时边缘均无红框={0}", noRedFocusBorderPassed);
+            Console.WriteLine("名单、记录、音乐、迷你模式、重置点击后不保留焦点且边缘无红蓝框={0}", noRedFocusBorderPassed);
             allPassed = allPassed && noRedFocusBorderPassed;
 
             FieldInfo drawButtonField = formType.GetField("drawButton", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -138,11 +144,11 @@ internal static class LayoutCheck
             allPassed = allPassed && clockPositionPassed;
 
             bool palettePassed = form.BackColor == Color.FromArgb(243, 246, 250)
-                && centeredName.Parent.BackColor == Color.FromArgb(247, 250, 255)
-                && mainDrawButton.BackColor == Color.FromArgb(47, 107, 255)
+                && centeredName.Parent.BackColor == Color.FromArgb(248, 247, 255)
+                && mainDrawButton.BackColor == Color.FromArgb(91, 75, 206)
                 && focusedResetButton.ForeColor == Color.FromArgb(102, 112, 133)
                 && focusedResetButton.BackColor == Color.FromArgb(247, 249, 252);
-            Console.WriteLine("新版雾白、浅蓝、主蓝和中性重置配色已生效={0}", palettePassed);
+            Console.WriteLine("新版雾白、浅紫、蓝紫主色和中性重置配色已生效={0}", palettePassed);
             allPassed = allPassed && palettePassed;
 
             Type confirmDialogType = assembly.GetType("DianMingLa.ConfirmDialog", true);
@@ -408,6 +414,22 @@ internal static class LayoutCheck
                 if (!edge) continue;
                 Color pixel = bitmap.GetPixel(x, y);
                 if (pixel.R >= 150 && pixel.R > pixel.G * 1.4 && pixel.R > pixel.B * 1.4)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool HasBlueEdgePixels(Bitmap bitmap)
+    {
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                bool edge = x <= 2 || y <= 2 || x >= bitmap.Width - 3 || y >= bitmap.Height - 3;
+                if (!edge) continue;
+                Color pixel = bitmap.GetPixel(x, y);
+                if (pixel.B >= 140 && pixel.B > pixel.R * 1.2 && pixel.B > pixel.G * 1.05)
                     return true;
             }
         }

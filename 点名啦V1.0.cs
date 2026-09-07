@@ -172,6 +172,11 @@ namespace DianMingLa
 
     internal class QuietButton : Button
     {
+        public QuietButton()
+        {
+            TabStop = false;
+        }
+
         protected override bool ShowFocusCues
         {
             get { return false; }
@@ -207,6 +212,7 @@ namespace DianMingLa
             TabStop = false;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            SetStyle(ControlStyles.Selectable, false);
         }
 
         protected override void OnResize(EventArgs e)
@@ -252,6 +258,20 @@ namespace DianMingLa
         {
             Invalidate();
             base.OnEnabledChanged(e);
+        }
+
+        protected override void OnGotFocus(EventArgs e)
+        {
+            base.OnGotFocus(e);
+            Form owner = FindForm();
+            if (owner != null && !owner.IsDisposed) owner.ActiveControl = null;
+            Invalidate();
+        }
+
+        protected override void OnLostFocus(EventArgs e)
+        {
+            Invalidate();
+            base.OnLostFocus(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -445,12 +465,12 @@ namespace DianMingLa
 
         private static readonly Color BackgroundColor = Color.FromArgb(243, 246, 250);
         private static readonly Color SurfaceColor = Color.White;
-        private static readonly Color SecondarySurfaceColor = Color.FromArgb(241, 245, 251);
-        private static readonly Color ResultSurfaceColor = Color.FromArgb(247, 250, 255);
+        private static readonly Color SecondarySurfaceColor = Color.FromArgb(244, 245, 251);
+        private static readonly Color ResultSurfaceColor = Color.FromArgb(248, 247, 255);
         private static readonly Color BorderColor = Color.FromArgb(221, 229, 239);
-        private static readonly Color PrimaryColor = Color.FromArgb(47, 107, 255);
-        private static readonly Color PrimaryHover = Color.FromArgb(36, 91, 224);
-        private static readonly Color PrimaryDark = Color.FromArgb(28, 73, 184);
+        private static readonly Color PrimaryColor = Color.FromArgb(91, 75, 206);
+        private static readonly Color PrimaryHover = Color.FromArgb(78, 63, 194);
+        private static readonly Color PrimaryDark = Color.FromArgb(64, 50, 166);
         private static readonly Color TextColor = Color.FromArgb(31, 42, 61);
         private static readonly Color MutedColor = Color.FromArgb(102, 112, 133);
         private static readonly Color SidebarColor = Color.FromArgb(247, 249, 252);
@@ -648,7 +668,7 @@ namespace DianMingLa
             {
                 if (e.Index < 0) return;
                 bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-                using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(234, 241, 255) : classSelector.BackColor))
+                using (SolidBrush background = new SolidBrush(selected ? Color.FromArgb(239, 237, 255) : classSelector.BackColor))
                     e.Graphics.FillRectangle(background, e.Bounds);
                 TextRenderer.DrawText(e.Graphics, classSelector.Items[e.Index].ToString(), classSelector.Font,
                     new Rectangle(e.Bounds.X + 8, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height), TextColor,
@@ -1116,8 +1136,8 @@ namespace DianMingLa
             }
             else if (back.ToArgb() == SecondarySurfaceColor.ToArgb())
             {
-                button.HoverBackColor = Color.FromArgb(231, 237, 247);
-                button.PressedBackColor = Color.FromArgb(220, 230, 245);
+                button.HoverBackColor = Color.FromArgb(235, 233, 248);
+                button.PressedBackColor = Color.FromArgb(221, 216, 244);
             }
             return button;
         }
