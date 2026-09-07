@@ -143,8 +143,10 @@ internal static class LayoutCheck
             Rectangle clockBounds = clockPositionLabel == null ? Rectangle.Empty : BoundsRelativeTo(clockPositionLabel, form);
             bool clockPositionPassed = clockPositionLabel != null && clockPositionLabel.Font.Bold
                 && clockPositionLabel.TextAlign == ContentAlignment.MiddleRight
-                && form.ClientSize.Width - clockBounds.Right <= 6;
-            Console.WriteLine("日期时间靠右且使用稍粗字体={0}", clockPositionPassed);
+                && form.ClientSize.Width - clockBounds.Right <= 6
+                && Math.Abs((clockPositionLabel.Top + clockPositionLabel.Height / 2)
+                    - (clockPositionLabel.Parent.ClientSize.Height / 2 + 3)) <= 1;
+            Console.WriteLine("日期时间靠右、稍粗并按视觉中心下移={0}", clockPositionPassed);
             allPassed = allPassed && clockPositionPassed;
 
             bool palettePassed = form.BackColor == Color.FromArgb(243, 246, 250)
@@ -246,6 +248,35 @@ internal static class LayoutCheck
             Console.WriteLine("时间与日期分两行={0}", clockPassed);
             allPassed = allPassed && clockPassed;
 
+            MethodInfo enterMiniMode = formType.GetMethod("EnterMiniMode", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo exitMiniMode = formType.GetMethod("ExitMiniMode", BindingFlags.Instance | BindingFlags.NonPublic);
+            enterMiniMode.Invoke(form, null);
+            Application.DoEvents();
+            Control miniDraw = formType.GetField("miniDrawButton", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) as Control;
+            Label miniName = formType.GetField("miniNameLabel", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) as Label;
+            Control expandMini = FindButtonLikeControls(form).FirstOrDefault(button => button.Text == "展开");
+            int miniButtonsLeft = Math.Min(miniDraw.Left, expandMini.Left);
+            int miniButtonsRight = Math.Max(miniDraw.Right, expandMini.Right);
+            bool miniLayoutPassed = form.Size == new Size(280, 150)
+                && miniDraw != null && expandMini != null && miniName != null
+                && miniButtonsRight - miniButtonsLeft == 248
+                && miniDraw.Top == expandMini.Top
+                && miniName.Bottom <= miniDraw.Top
+                && Math.Abs((miniName.Left + miniName.Width / 2)
+                    - (miniButtonsLeft + (miniButtonsRight - miniButtonsLeft) / 2)) <= 1;
+            Console.WriteLine("迷你窗口实际 {0}×{1}（客户区 {2}×{3}），姓名中心 {4}、按钮组中心 {5}，布局通过={6}",
+                form.Width, form.Height, form.ClientSize.Width, form.ClientSize.Height,
+                miniName.Left + miniName.Width / 2,
+                miniButtonsLeft + (miniButtonsRight - miniButtonsLeft) / 2, miniLayoutPassed);
+            allPassed = allPassed && miniLayoutPassed;
+            using (Bitmap miniPreview = new Bitmap(form.Width, form.Height))
+            {
+                form.DrawToBitmap(miniPreview, new Rectangle(Point.Empty, form.Size));
+                miniPreview.Save(Path.Combine(Path.GetDirectoryName(args[1]), "mini-preview.png"), ImageFormat.Png);
+            }
+            exitMiniMode.Invoke(form, null);
+            Application.DoEvents();
+
             MethodInfo rebuildMusic = formType.GetMethod("RebuildMusicMenu", BindingFlags.Instance | BindingFlags.NonPublic);
             rebuildMusic.Invoke(form, null);
             FieldInfo musicMenuField = formType.GetField("musicMenu", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -302,8 +333,14 @@ internal static class LayoutCheck
             Type historyDialogType = assembly.GetType("DianMingLa.HistoryDialog", true);
             using (Form historyDialog = (Form)Activator.CreateInstance(historyDialogType, new object[] { historySnapshot }))
             {
-                bool historyDialogPassed = FindControl<DataGridView>(historyDialog) != null;
-                Console.WriteLine("历史查看与导出窗口可用={0}", historyDialogPassed);
+                DataGridView historyGrid = FindControl<DataGridView>(historyDialog);
+                bool historyDialogPassed = historyGrid != null
+                    && !historyGrid.AllowUserToResizeRows
+                    && historyGrid.AutoSizeRowsMode == DataGridViewAutoSizeRowsMode.None
+                    && historyGrid.ColumnHeadersHeightSizeMode == DataGridViewColumnHeadersHeightSizeMode.DisableResizing
+                    && historyGrid.ColumnHeadersHeight >= 34
+                    && historyGrid.RowTemplate.Height >= 30;
+                Console.WriteLine("历史表头和数据行高度充足且禁止拖动={0}", historyDialogPassed);
                 allPassed = allPassed && historyDialogPassed;
             }
 

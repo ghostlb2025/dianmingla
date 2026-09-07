@@ -1075,7 +1075,7 @@ namespace DianMingLa
             clockLabel.TextAlign = ContentAlignment.MiddleRight;
             clockLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             clockLabel.Size = new Size(142, 44);
-            clockLabel.Location = new Point(bar.Width - 142, 5);
+            clockLabel.Location = new Point(bar.Width - 142, 8);
 
             bar.Controls.Add(drawButton);
             bar.Controls.Add(resetButton);
@@ -1083,6 +1083,7 @@ namespace DianMingLa
             bar.Resize += delegate
             {
                 clockLabel.Left = bar.ClientSize.Width - clockLabel.Width;
+                clockLabel.Top = Math.Max(0, (bar.ClientSize.Height - clockLabel.Height) / 2 + 3);
             };
             return bar;
         }
@@ -1100,9 +1101,9 @@ namespace DianMingLa
             miniStatusLabel = new Label();
             miniStatusLabel.Text = "点名啦 · 示例一班";
             miniStatusLabel.ForeColor = Color.FromArgb(177, 192, 217);
-            miniStatusLabel.Font = new Font("Microsoft YaHei UI", 9F);
-            miniStatusLabel.Location = new Point(18, 12);
-            miniStatusLabel.Size = new Size(230, 24);
+            miniStatusLabel.Font = new Font("Microsoft YaHei UI", 8.5F);
+            miniStatusLabel.Location = new Point(16, 7);
+            miniStatusLabel.Size = new Size(220, 22);
             miniStatusLabel.MouseDown += MiniDrag_MouseDown;
             miniStatusLabel.MouseMove += MiniDrag_MouseMove;
             miniStatusLabel.MouseUp += MiniDrag_MouseUp;
@@ -1110,25 +1111,25 @@ namespace DianMingLa
             miniNameLabel = new Label();
             miniNameLabel.Text = "准备点名";
             miniNameLabel.ForeColor = Color.White;
-            miniNameLabel.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Bold);
+            miniNameLabel.Font = new Font("Microsoft YaHei UI", 20F, FontStyle.Bold);
             miniNameLabel.TextAlign = ContentAlignment.MiddleCenter;
-            miniNameLabel.Location = new Point(15, 40);
-            miniNameLabel.Size = new Size(390, 65);
-            miniNameLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right;
+            miniNameLabel.Location = new Point(16, 32);
+            miniNameLabel.Size = new Size(248, 56);
+            miniNameLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top;
 
             miniDrawButton = MakeButton("开始点名", PrimaryColor, Color.White, 152, 42);
-            miniDrawButton.Padding = new Padding(0, 0, 0, 2);
-            miniDrawButton.Location = new Point(18, 124);
+            miniDrawButton.Padding = new Padding(0, 0, 0, 1);
+            miniDrawButton.Location = new Point(16, 96);
             miniDrawButton.Click += DrawButton_Click;
 
             RoundedButton expand = MakeButton("展开", Color.FromArgb(54, 69, 92), Color.White, 86, 42);
-            expand.Location = new Point(180, 124);
+            expand.Location = new Point(178, 96);
             expand.Click += delegate { ExitMiniMode(); };
 
-            RoundedButton close = MakeButton("×", Color.FromArgb(54, 69, 92), Color.White, 40, 34);
-            close.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
-            close.Location = new Point(365, 8);
-            close.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            RoundedButton close = MakeButton("×", miniPanel.BackColor, Color.White, 32, 28);
+            close.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
+            close.Location = new Point(244, 3);
+            close.Anchor = AnchorStyles.Left | AnchorStyles.Top;
             close.Click += delegate { Close(); };
 
             miniPanel.Controls.Add(miniStatusLabel);
@@ -2120,9 +2121,9 @@ namespace DianMingLa
             miniPanel.Visible = true;
             miniPanel.BringToFront();
             FormBorderStyle = FormBorderStyle.None;
-            MinimumSize = new Size(420, 190);
-            MaximumSize = new Size(420, 190);
-            Size = new Size(420, 190);
+            MinimumSize = new Size(280, 150);
+            MaximumSize = new Size(280, 150);
+            Size = new Size(280, 150);
             TopMost = true;
 
             Screen screen = Screen.FromControl(this);
