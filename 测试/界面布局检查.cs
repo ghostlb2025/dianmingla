@@ -78,7 +78,7 @@ internal static class LayoutCheck
                 && form.Icon != null && form.MinimumSize == new Size(920, 500) && form.MaximumSize == new Size(920, 500);
             Console.WriteLine("单行自定义顶栏与应用图标={0}", customTitlePassed);
             allPassed = allPassed && customTitlePassed;
-            Button[] featureButtons = FindControls<Button>(form)
+            Control[] featureButtons = FindButtonLikeControls(form)
                 .Where(button => new string[] { "名单", "记录", "音乐", "迷你模式" }.Contains(button.Text)).ToArray();
             FieldInfo topMostButtonField = formType.GetField("topMostButton", BindingFlags.Instance | BindingFlags.NonPublic);
             Button topMostButton = topMostButtonField.GetValue(form) as Button;
@@ -91,7 +91,7 @@ internal static class LayoutCheck
                 && topMostButton.Font.Size >= 11.5F;
             Console.WriteLine("四个功能按钮等宽；置顶使用放大的系统窗口图标={0}", equalButtonsPassed);
             allPassed = allPassed && equalButtonsPassed;
-            Button[] allButtons = FindControls<Button>(form);
+            Control[] allButtons = FindButtonLikeControls(form);
             PropertyInfo showFocusCuesProperty = typeof(Control).GetProperty(
                 "ShowFocusCues", BindingFlags.Instance | BindingFlags.NonPublic);
             bool focusCuePassed = showFocusCuesProperty != null && allButtons.Length > 0
@@ -100,12 +100,12 @@ internal static class LayoutCheck
             allPassed = allPassed && focusCuePassed;
 
             FieldInfo resetButtonField = formType.GetField("resetButton", BindingFlags.Instance | BindingFlags.NonPublic);
-            Button focusedResetButton = resetButtonField.GetValue(form) as Button;
-            Button[] focusBorderButtons = featureButtons
-                .Concat(new Button[] { focusedResetButton })
+            Control focusedResetButton = resetButtonField.GetValue(form) as Control;
+            Control[] focusBorderButtons = featureButtons
+                .Concat(new Control[] { focusedResetButton })
                 .Where(button => button != null).ToArray();
             bool noRedFocusBorderPassed = focusBorderButtons.Length == 5;
-            foreach (Button focusButton in focusBorderButtons)
+            foreach (Control focusButton in focusBorderButtons)
             {
                 bool acceptedFocus = focusButton.Focus();
                 Application.DoEvents();
@@ -115,22 +115,26 @@ internal static class LayoutCheck
                         new Rectangle(Point.Empty, focusButton.Size));
                     bool redEdge = HasRedEdgePixels(focusedPreview);
                     bool blueEdge = HasBlueEdgePixels(focusedPreview);
-                    Console.WriteLine("焦点检查“{0}”：接受焦点={1}，红边={2}，蓝边={3}",
-                        focusButton.Text, acceptedFocus || focusButton.Focused, redEdge, blueEdge);
+                    bool darkEdge = HasDarkEdgePixels(focusedPreview);
+                    Console.WriteLine("焦点检查“{0}”：接受焦点={1}，红边={2}，蓝边={3}，黑点={4}",
+                        focusButton.Text, acceptedFocus || focusButton.Focused, redEdge, blueEdge, darkEdge);
                     noRedFocusBorderPassed = noRedFocusBorderPassed
                         && !focusButton.Focused
-                        && !redEdge && !blueEdge;
+                        && !redEdge && !blueEdge && !darkEdge;
                 }
             }
-            Console.WriteLine("名单、记录、音乐、迷你模式、重置点击后不保留焦点且边缘无红蓝框={0}", noRedFocusBorderPassed);
+            Console.WriteLine("名单、记录、音乐、迷你模式、重置边缘无红框、蓝框和黑点={0}", noRedFocusBorderPassed);
             allPassed = allPassed && noRedFocusBorderPassed;
 
             FieldInfo drawButtonField = formType.GetField("drawButton", BindingFlags.Instance | BindingFlags.NonPublic);
-            Button mainDrawButton = drawButtonField.GetValue(form) as Button;
+            Control mainDrawButton = drawButtonField.GetValue(form) as Control;
+            PropertyInfo textAlignProperty = mainDrawButton == null ? null
+                : mainDrawButton.GetType().GetProperty("TextAlign", BindingFlags.Instance | BindingFlags.Public);
             bool drawButtonPassed = mainDrawButton != null && mainDrawButton.Parent != null
                 && mainDrawButton.Bottom <= mainDrawButton.Parent.ClientSize.Height - 2
                 && mainDrawButton.Padding.Bottom >= 2
-                && mainDrawButton.TextAlign == ContentAlignment.MiddleCenter;
+                && textAlignProperty != null
+                && (ContentAlignment)textAlignProperty.GetValue(mainDrawButton, null) == ContentAlignment.MiddleCenter;
             Console.WriteLine("开始点名按钮文字完整且四周留有空间={0}", drawButtonPassed);
             allPassed = allPassed && drawButtonPassed;
 
@@ -156,11 +160,12 @@ internal static class LayoutCheck
                 BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null,
                 new object[] { "重置", "确认清空本轮记录吗？", "确认清空" }, null))
             {
-                Button cancelConfirm = FindControls<Button>(confirmDialog).FirstOrDefault(button => button.Text == "取消");
-                Button dangerConfirm = FindControls<Button>(confirmDialog).FirstOrDefault(button => button.Text == "确认清空");
+                Control cancelConfirm = FindButtonLikeControls(confirmDialog).FirstOrDefault(button => button.Text == "取消");
+                Control dangerConfirm = FindButtonLikeControls(confirmDialog).FirstOrDefault(button => button.Text == "确认清空");
                 bool confirmDialogPassed = confirmDialog.FormBorderStyle == FormBorderStyle.None
                     && cancelConfirm != null && dangerConfirm != null
-                    && confirmDialog.AcceptButton == cancelConfirm && confirmDialog.CancelButton == cancelConfirm
+                    && confirmDialog.AcceptButton == (cancelConfirm as IButtonControl)
+                    && confirmDialog.CancelButton == (cancelConfirm as IButtonControl)
                     && dangerConfirm.BackColor == Color.FromArgb(196, 61, 61)
                     && dangerConfirm.ForeColor == Color.White;
                 Console.WriteLine("危险操作使用统一确认窗且默认选择取消={0}", confirmDialogPassed);
@@ -199,7 +204,7 @@ internal static class LayoutCheck
 
                 if (testSize == testSizes[0])
                 {
-                    foreach (Button button in FindControls<Button>(form))
+                    foreach (Control button in FindButtonLikeControls(form))
                     {
                         Rectangle bounds = BoundsRelativeTo(button, form);
                         Console.WriteLine("按钮“{0}”：x={1}, y={2}, w={3}, h={4}",
@@ -392,6 +397,13 @@ internal static class LayoutCheck
             .ToArray();
     }
 
+    private static Control[] FindButtonLikeControls(Control root)
+    {
+        return FindControls<Control>(root)
+            .Where(control => control is Button || control.GetType().FullName == "DianMingLa.RoundedButton")
+            .ToArray();
+    }
+
     private static Rectangle BoundsRelativeTo(Control control, Control ancestor)
     {
         Point point = control.Location;
@@ -431,6 +443,21 @@ internal static class LayoutCheck
                 Color pixel = bitmap.GetPixel(x, y);
                 if (pixel.B >= 140 && pixel.B > pixel.R * 1.2 && pixel.B > pixel.G * 1.05)
                     return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool HasDarkEdgePixels(Bitmap bitmap)
+    {
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                bool edge = x <= 2 || y <= 2 || x >= bitmap.Width - 3 || y >= bitmap.Height - 3;
+                if (!edge) continue;
+                Color pixel = bitmap.GetPixel(x, y);
+                if (pixel.R < 80 && pixel.G < 80 && pixel.B < 80) return true;
             }
         }
         return false;

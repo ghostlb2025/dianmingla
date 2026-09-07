@@ -183,17 +183,24 @@ namespace DianMingLa
         }
     }
 
-    internal sealed class RoundedButton : QuietButton
+    internal sealed class RoundedButton : Control, IButtonControl
     {
         private bool mouseOver;
         private bool mouseDown;
+        private DialogResult dialogResult;
 
         public int CornerRadius { get; set; }
+        public ContentAlignment TextAlign { get; set; }
         public Color BorderColor { get; set; }
         public Color HoverBackColor { get; set; }
         public Color HoverForeColor { get; set; }
         public Color PressedBackColor { get; set; }
         public Color PressedForeColor { get; set; }
+        public DialogResult DialogResult
+        {
+            get { return dialogResult; }
+            set { dialogResult = value; }
+        }
 
         public RoundedButton()
         {
@@ -203,26 +210,46 @@ namespace DianMingLa
             HoverForeColor = Color.Empty;
             PressedBackColor = Color.Empty;
             PressedForeColor = Color.Empty;
-            FlatStyle = FlatStyle.Flat;
-            FlatAppearance.BorderSize = 0;
-            UseVisualStyleBackColor = false;
             Cursor = Cursors.Hand;
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
             TextAlign = ContentAlignment.MiddleCenter;
             TabStop = false;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
-                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
+                ControlStyles.StandardClick, true);
             SetStyle(ControlStyles.Selectable, false);
         }
 
-        protected override void OnResize(EventArgs e)
+        protected override bool ShowFocusCues
         {
-            base.OnResize(e);
-            Rectangle rect = new Rectangle(0, 0, Width, Height);
-            using (GraphicsPath path = RoundedRect(rect, CornerRadius))
+            get { return false; }
+        }
+
+        public void NotifyDefault(bool value)
+        {
+            Invalidate();
+        }
+
+        public void PerformClick()
+        {
+            if (Enabled && Visible) OnClick(EventArgs.Empty);
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            base.OnClick(e);
+            if (dialogResult != DialogResult.None)
             {
-                Region = new Region(path);
+                Form owner = FindForm();
+                if (owner != null) owner.DialogResult = dialogResult;
             }
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Color background = Parent == null ? SystemColors.Control : Parent.BackColor;
+            using (SolidBrush brush = new SolidBrush(background))
+                e.Graphics.FillRectangle(brush, ClientRectangle);
         }
 
         protected override void OnMouseEnter(EventArgs e)

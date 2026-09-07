@@ -221,18 +221,14 @@ namespace DianMingLa
             footer.Dock = DockStyle.Fill;
             footer.FlowDirection = FlowDirection.RightToLeft;
             footer.Padding = new Padding(0, 7, 0, 0);
-            Button cancel = ActionButton("取消", null);
+            RoundedButton cancel = ActionButton("取消", null);
             cancel.DialogResult = DialogResult.Cancel;
-            Button save = ActionButton("保存", SaveAndClose);
+            RoundedButton save = ActionButton("保存", SaveAndClose);
             save.BackColor = Color.FromArgb(91, 75, 206);
             save.ForeColor = Color.White;
-            RoundedButton saveButton = save as RoundedButton;
-            if (saveButton != null)
-            {
-                saveButton.BorderColor = Color.Transparent;
-                saveButton.HoverBackColor = Color.FromArgb(78, 63, 194);
-                saveButton.PressedBackColor = Color.FromArgb(64, 50, 166);
-            }
+            save.BorderColor = Color.Transparent;
+            save.HoverBackColor = Color.FromArgb(78, 63, 194);
+            save.PressedBackColor = Color.FromArgb(64, 50, 166);
             footer.Controls.Add(cancel);
             footer.Controls.Add(save);
 
@@ -254,7 +250,7 @@ namespace DianMingLa
             return copy;
         }
 
-        private Button ActionButton(string text, EventHandler action)
+        private RoundedButton ActionButton(string text, EventHandler action)
         {
             RoundedButton button = new RoundedButton();
             button.Text = text;
@@ -462,10 +458,10 @@ namespace DianMingLa
             footer.Height = 48;
             footer.Padding = new Padding(8);
             footer.FlowDirection = FlowDirection.RightToLeft;
-            Button close = MakeButton("关闭", delegate { Close(); });
-            Button export = MakeButton("导出 CSV", ExportCsv);
-            Button undo = MakeButton("撤销上次", UndoLast);
-            Button clear = MakeButton("清空记录", ClearHistory);
+            RoundedButton close = MakeButton("关闭", delegate { Close(); });
+            RoundedButton export = MakeButton("导出 CSV", ExportCsv);
+            RoundedButton undo = MakeButton("撤销上次", UndoLast);
+            RoundedButton clear = MakeButton("清空记录", ClearHistory);
             footer.Controls.Add(close);
             footer.Controls.Add(export);
             footer.Controls.Add(undo);
@@ -475,7 +471,7 @@ namespace DianMingLa
             Controls.Add(footer);
         }
 
-        private Button MakeButton(string text, EventHandler click)
+        private RoundedButton MakeButton(string text, EventHandler click)
         {
             RoundedButton button = new RoundedButton();
             button.Text = text;
