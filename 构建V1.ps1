@@ -9,8 +9,9 @@ $presentationCore = Join-Path $frameworkDirectory 'WPF\PresentationCore.dll'
 $sourceItem = Get-ChildItem -LiteralPath $projectDirectory -Filter '*V1.0.cs' | Select-Object -First 1
 $sources = Get-ChildItem -LiteralPath $projectDirectory -Filter '*.cs' | Select-Object -ExpandProperty FullName
 $programName = ([string][char]0x70B9) + ([string][char]0x540D) + ([string][char]0x5566)
-$output = Join-Path $projectDirectory ($programName + '.exe')
+$output = Join-Path $projectDirectory ($programName + ' V1.1.exe')
 $icon = (Get-ChildItem -LiteralPath (Join-Path $projectDirectory 'assets') -Filter '*.ico' | Select-Object -First 1).FullName
+$manifest = Join-Path $projectDirectory ($programName + '.manifest')
 $musicDirectory = Join-Path $projectDirectory 'music'
 $takeTheRide = (Get-ChildItem -LiteralPath $musicDirectory -Filter '*Take the Ride.mp3' | Select-Object -First 1).FullName
 $rush = (Get-ChildItem -LiteralPath $musicDirectory -Filter '*Rush.mp3' | Select-Object -First 1).FullName
@@ -29,6 +30,7 @@ if (-not (Test-Path -LiteralPath $compiler)) {
     /platform:anycpu `
     /optimize+ `
     /win32icon:$icon `
+    /win32manifest:$manifest `
     $takeTheRideResource `
     $rushResource `
     $springChickenResource `

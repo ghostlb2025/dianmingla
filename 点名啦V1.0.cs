@@ -7,28 +7,63 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Globalization;
 using System.Text;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 [assembly: AssemblyTitle("点名啦")]
 [assembly: AssemblyProduct("点名啦")]
-[assembly: AssemblyVersion("1.0.1.0")]
-[assembly: AssemblyFileVersion("1.0.1.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyInformationalVersion("1.1")]
 
 namespace DianMingLa
 {
     internal static class Program
     {
+        private const string SingleInstanceName = @"Local\DianMingLa.SingleInstance";
+        private const string ShowWindowEventName = @"Local\DianMingLa.ShowWindow";
+
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
             try
             {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new MainForm());
+                bool startInTray = args.Any(arg => String.Equals(arg, "--tray", StringComparison.OrdinalIgnoreCase));
+                if (!startInTray) MainForm.RepairAutoStartPathForCurrentExecutable();
+                bool createdNew;
+                using (EventWaitHandle showWindowEvent = new EventWaitHandle(false,
+                    EventResetMode.AutoReset, ShowWindowEventName))
+                using (Mutex singleInstance = new Mutex(true, SingleInstanceName, out createdNew))
+                {
+                    if (!createdNew)
+                    {
+                        if (!startInTray) showWindowEvent.Set();
+                        return;
+                    }
+
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    MainForm form = new MainForm(!startInTray);
+                    IntPtr unusedHandle = form.Handle;
+                    RegisteredWaitHandle listener = ThreadPool.RegisterWaitForSingleObject(showWindowEvent,
+                        delegate
+                        {
+                            if (!form.IsDisposed && form.IsHandleCreated)
+                            {
+                                try { form.BeginInvoke(new Action(form.RestoreFromOtherInstance)); }
+                                catch (InvalidOperationException) { }
+                            }
+                        }, null, Timeout.Infinite, false);
+
+                    ApplicationContext context = new ApplicationContext(form);
+                    if (startInTray) form.StartInTray(); else form.Show();
+                    Application.Run(context);
+                    listener.Unregister(null);
+                }
             }
             catch (Exception ex)
             {
@@ -52,6 +87,9 @@ namespace DianMingLa
         public string SelectedMusic { get; set; }
         public int Volume { get; set; }
         public string LastClass { get; set; }
+        public bool HasMiniPosition { get; set; }
+        public int MiniLeft { get; set; }
+        public int MiniTop { get; set; }
 
         public AppSettings()
         {
@@ -60,6 +98,9 @@ namespace DianMingLa
             SelectedMusic = "";
             Volume = 42;
             LastClass = "示例一班";
+            HasMiniPosition = false;
+            MiniLeft = 0;
+            MiniTop = 0;
         }
     }
 
@@ -509,9 +550,11 @@ namespace DianMingLa
         private readonly Dictionary<string, StudentCard> studentCards;
         private readonly Random random;
         private readonly Stopwatch drawWatch;
-        private readonly Timer animationTimer;
-        private readonly Timer clockTimer;
-        private readonly Timer audioTimer;
+        private readonly System.Windows.Forms.Timer animationTimer;
+        private readonly System.Windows.Forms.Timer clockTimer;
+        private readonly System.Windows.Forms.Timer audioTimer;
+        private readonly System.Windows.Forms.Timer miniVisualTimer;
+        private readonly Stopwatch miniResultWatch;
         private readonly System.Windows.Media.MediaPlayer mediaPlayer;
 
         private TableLayoutPanel mainLayout;
@@ -535,6 +578,7 @@ namespace DianMingLa
         private RoundedButton musicMenuButton;
         private ContextMenuStrip musicMenu;
         private ContextMenuStrip trayMenu;
+        private ToolStripMenuItem autoStartMenuItem;
         private NotifyIcon trayIcon;
         private ToolTip toolTip;
         private readonly List<string> musicFiles;
@@ -563,6 +607,16 @@ namespace DianMingLa
         private bool audioFadingOut;
         private bool initializing;
         private bool exitRequested;
+        private bool miniResultVisible;
+        private bool miniNameFading;
+        private int miniNameFadeStep;
+        private double targetMiniOpacity;
+        private bool displaySettingsSubscribed;
+
+        private const string AutoStartRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        private const string AutoStartValueName = "点名啦";
+        private const double InactiveMiniOpacity = 0.60;
+        private const int MiniResultDurationMilliseconds = 20000;
 
         private readonly string baseDirectory;
         private readonly string musicDirectory;
@@ -571,7 +625,11 @@ namespace DianMingLa
         private readonly string historyPath;
         private AppSettings settings;
 
-        public MainForm()
+        public MainForm() : this(false)
+        {
+        }
+
+        internal MainForm(bool repairAutoStartPath)
         {
             string testDataDirectory = Environment.GetEnvironmentVariable("DIANMINGLA_DATA_DIR");
             baseDirectory = String.IsNullOrWhiteSpace(testDataDirectory)
@@ -595,22 +653,29 @@ namespace DianMingLa
             mediaPlayer = new System.Windows.Media.MediaPlayer();
             mediaPlayer.MediaEnded += MediaPlayer_MediaEnded;
 
-            animationTimer = new Timer();
+            animationTimer = new System.Windows.Forms.Timer();
             animationTimer.Interval = 100;
             animationTimer.Tick += AnimationTimer_Tick;
 
-            clockTimer = new Timer();
+            clockTimer = new System.Windows.Forms.Timer();
             clockTimer.Interval = 1000;
             clockTimer.Tick += ClockTimer_Tick;
 
-            audioTimer = new Timer();
+            audioTimer = new System.Windows.Forms.Timer();
             audioTimer.Interval = 50;
             audioTimer.Tick += AudioTimer_Tick;
+
+            miniResultWatch = new Stopwatch();
+            miniVisualTimer = new System.Windows.Forms.Timer();
+            miniVisualTimer.Interval = 40;
+            miniVisualTimer.Tick += MiniVisualTimer_Tick;
+            targetMiniOpacity = 1.0;
 
             InitializeWindow();
             toolTip = new ToolTip();
             InitializeInterface();
             InitializeTrayIcon();
+            if (repairAutoStartPath) RepairAutoStartPathIfEnabled();
             topMostCheck.Checked = settings.TopMostEnabled;
             EnsureMusicFolderAndMigrateLegacyMusic();
             PopulateMusicList();
@@ -623,11 +688,14 @@ namespace DianMingLa
             SaveSettings();
             UpdateClock();
             clockTimer.Start();
+            miniVisualTimer.Start();
+            SystemEvents.DisplaySettingsChanged += SystemEvents_DisplaySettingsChanged;
+            displaySettingsSubscribed = true;
         }
 
         private void InitializeWindow()
         {
-            Text = "点名啦 1.0.1";
+            Text = "点名啦";
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             StartPosition = FormStartPosition.CenterScreen;
             Size = new Size(920, 500);
@@ -641,6 +709,8 @@ namespace DianMingLa
             KeyPreview = true;
             KeyDown += MainForm_KeyDown;
             FormClosing += MainForm_FormClosing;
+            Activated += MainForm_Activated;
+            Deactivate += MainForm_Deactivate;
             Shown += delegate { ActiveControl = null; };
         }
 
@@ -1097,6 +1167,8 @@ namespace DianMingLa
             miniPanel.MouseDown += MiniDrag_MouseDown;
             miniPanel.MouseMove += MiniDrag_MouseMove;
             miniPanel.MouseUp += MiniDrag_MouseUp;
+            miniPanel.MouseEnter += Mini_MouseEnter;
+            miniPanel.MouseLeave += Mini_MouseLeave;
 
             miniStatusLabel = new Label();
             miniStatusLabel.Text = "点名啦 · 示例一班";
@@ -1107,30 +1179,40 @@ namespace DianMingLa
             miniStatusLabel.MouseDown += MiniDrag_MouseDown;
             miniStatusLabel.MouseMove += MiniDrag_MouseMove;
             miniStatusLabel.MouseUp += MiniDrag_MouseUp;
+            miniStatusLabel.MouseEnter += Mini_MouseEnter;
+            miniStatusLabel.MouseLeave += Mini_MouseLeave;
 
             miniNameLabel = new Label();
             miniNameLabel.Text = "准备点名";
-            miniNameLabel.ForeColor = Color.White;
+            miniNameLabel.ForeColor = Color.FromArgb(177, 192, 217);
             miniNameLabel.Font = new Font("Microsoft YaHei UI", 20F, FontStyle.Bold);
             miniNameLabel.TextAlign = ContentAlignment.MiddleCenter;
             miniNameLabel.Location = new Point(16, 32);
             miniNameLabel.Size = new Size(248, 56);
             miniNameLabel.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+            miniNameLabel.MouseEnter += Mini_MouseEnter;
+            miniNameLabel.MouseLeave += Mini_MouseLeave;
 
             miniDrawButton = MakeButton("开始点名", PrimaryColor, Color.White, 152, 42);
             miniDrawButton.Padding = new Padding(0, 0, 0, 1);
             miniDrawButton.Location = new Point(16, 96);
             miniDrawButton.Click += DrawButton_Click;
+            miniDrawButton.MouseEnter += Mini_MouseEnter;
+            miniDrawButton.MouseLeave += Mini_MouseLeave;
 
             RoundedButton expand = MakeButton("展开", Color.FromArgb(54, 69, 92), Color.White, 86, 42);
             expand.Location = new Point(178, 96);
             expand.Click += delegate { ExitMiniMode(); };
+            expand.MouseEnter += Mini_MouseEnter;
+            expand.MouseLeave += Mini_MouseLeave;
 
             RoundedButton close = MakeButton("×", miniPanel.BackColor, Color.White, 32, 28);
             close.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
             close.Location = new Point(244, 3);
             close.Anchor = AnchorStyles.Left | AnchorStyles.Top;
             close.Click += delegate { Close(); };
+            close.MouseEnter += Mini_MouseEnter;
+            close.MouseLeave += Mini_MouseLeave;
 
             miniPanel.Controls.Add(miniStatusLabel);
             miniPanel.Controls.Add(miniNameLabel);
@@ -1192,31 +1274,49 @@ namespace DianMingLa
             trayMenu = new ContextMenuStrip();
             trayMenu.Font = new Font("Microsoft YaHei UI", 9.5F);
 
-            ToolStripMenuItem openItem = new ToolStripMenuItem("打开点名啦");
+            ToolStripMenuItem openItem = new ToolStripMenuItem("打开主界面");
             openItem.Font = new Font(trayMenu.Font, FontStyle.Bold);
             openItem.Click += delegate { RestoreFromTray(); };
             trayMenu.Items.Add(openItem);
-            trayMenu.Items.Add(new ToolStripSeparator());
 
+            ToolStripMenuItem miniItem = new ToolStripMenuItem("进入迷你模式");
+            miniItem.Click += delegate { ShowMiniFromTray(); };
+            trayMenu.Items.Add(miniItem);
+
+            autoStartMenuItem = new ToolStripMenuItem("开机自启动");
+            autoStartMenuItem.Checked = IsAutoStartEnabled();
+            autoStartMenuItem.Click += ToggleAutoStart;
+            trayMenu.Items.Add(autoStartMenuItem);
+
+            trayMenu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem exitItem = new ToolStripMenuItem("退出");
-            exitItem.Click += delegate
-            {
-                exitRequested = true;
-                trayIcon.Visible = false;
-                Close();
-            };
+            exitItem.Click += delegate { RequestExit(); };
             trayMenu.Items.Add(exitItem);
 
             trayIcon = new NotifyIcon();
             trayIcon.Icon = (Icon)(Icon ?? SystemIcons.Application).Clone();
-            trayIcon.Text = "点名啦 1.0.1";
+            trayIcon.Text = "点名啦 V1.1";
             trayIcon.ContextMenuStrip = trayMenu;
-            trayIcon.Visible = false;
+            trayIcon.Visible = true;
             trayIcon.DoubleClick += delegate { RestoreFromTray(); };
+        }
+
+        internal void StartInTray()
+        {
+            ShowInTaskbar = false;
+            trayIcon.Visible = true;
+            Hide();
+        }
+
+        internal void RestoreFromOtherInstance()
+        {
+            RestoreFromTray();
         }
 
         private void HideToTray()
         {
+            SaveMiniPosition();
+            ResetMiniResult();
             if (drawing)
             {
                 animationTimer.Stop();
@@ -1235,23 +1335,112 @@ namespace DianMingLa
                 resultHintLabel.Text = "准备开始点名";
                 currentNameLabel.Text = "准备点名";
                 currentNameLabel.ForeColor = PrimaryColor;
-                miniNameLabel.Text = "准备点名";
-                miniStatusLabel.Text = "点名啦 · " + currentClass;
+                SetMiniName("准备点名", false);
+                UpdateMiniStatus();
                 RefreshCards();
             }
 
             StopMusicImmediately();
+            RestoreFullOpacity();
+            ShowInTaskbar = false;
             trayIcon.Visible = true;
             Hide();
         }
 
         private void RestoreFromTray()
         {
+            if (miniPanel.Visible) ExitMiniMode();
+            RestoreFullOpacity();
+            ShowInTaskbar = true;
             Show();
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
-            trayIcon.Visible = false;
             Activate();
             BringToFront();
+        }
+
+        private void ShowMiniFromTray()
+        {
+            ShowInTaskbar = true;
+            Show();
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            if (!miniPanel.Visible) EnterMiniMode();
+            RestoreFullOpacity();
+            Activate();
+            BringToFront();
+        }
+
+        private void RequestExit()
+        {
+            exitRequested = true;
+            SaveMiniPosition();
+            if (trayIcon != null) trayIcon.Visible = false;
+            Close();
+        }
+
+        private static string CurrentAutoStartCommand()
+        {
+            return "\"" + Application.ExecutablePath + "\" --tray";
+        }
+
+        private static string ReadAutoStartCommand()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(AutoStartRegistryPath, false))
+                return key == null ? null : key.GetValue(AutoStartValueName) as string;
+        }
+
+        private static bool IsAutoStartEnabled()
+        {
+            try { return !String.IsNullOrWhiteSpace(ReadAutoStartCommand()); }
+            catch { return false; }
+        }
+
+        private void RepairAutoStartPathIfEnabled()
+        {
+            try
+            {
+                RepairAutoStartPathForCurrentExecutable();
+                if (autoStartMenuItem != null) autoStartMenuItem.Checked = IsAutoStartEnabled();
+            }
+            catch
+            {
+                if (autoStartMenuItem != null) autoStartMenuItem.Checked = IsAutoStartEnabled();
+            }
+        }
+
+        internal static void RepairAutoStartPathForCurrentExecutable()
+        {
+            try
+            {
+                string existing = ReadAutoStartCommand();
+                if (String.IsNullOrWhiteSpace(existing)) return;
+                string expected = CurrentAutoStartCommand();
+                if (String.Equals(existing, expected, StringComparison.OrdinalIgnoreCase)) return;
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(AutoStartRegistryPath))
+                    key.SetValue(AutoStartValueName, expected, RegistryValueKind.String);
+            }
+            catch { }
+        }
+
+        private void ToggleAutoStart(object sender, EventArgs e)
+        {
+            try
+            {
+                bool enable = !IsAutoStartEnabled();
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(AutoStartRegistryPath))
+                {
+                    if (enable)
+                        key.SetValue(AutoStartValueName, CurrentAutoStartCommand(), RegistryValueKind.String);
+                    else
+                        key.DeleteValue(AutoStartValueName, false);
+                }
+                autoStartMenuItem.Checked = enable;
+            }
+            catch (Exception ex)
+            {
+                autoStartMenuItem.Checked = IsAutoStartEnabled();
+                MessageBox.Show(this, "无法更改开机自启动设置。\n\n" + ex.Message,
+                    "开机自启动", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void TitleBar_MouseDown(object sender, MouseEventArgs e)
@@ -1265,7 +1454,52 @@ namespace DianMingLa
         {
             base.OnPaint(e);
             using (Pen border = new Pen(Color.FromArgb(185, 198, 218)))
-                e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+            {
+                if (miniPanel != null && miniPanel.Visible)
+                {
+                    e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                    using (GraphicsPath path = CreateRoundedWindowPath(
+                        new Rectangle(0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1)), 18))
+                        e.Graphics.DrawPath(border, path);
+                }
+                else
+                {
+                    e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+                }
+            }
+        }
+
+        private static GraphicsPath CreateRoundedWindowPath(Rectangle bounds, int radius)
+        {
+            GraphicsPath path = new GraphicsPath();
+            int diameter = Math.Max(2, radius * 2);
+            Rectangle arc = new Rectangle(bounds.Left, bounds.Top, diameter, diameter);
+            path.AddArc(arc, 180, 90);
+            arc.X = bounds.Right - diameter;
+            path.AddArc(arc, 270, 90);
+            arc.Y = bounds.Bottom - diameter;
+            path.AddArc(arc, 0, 90);
+            arc.X = bounds.Left;
+            path.AddArc(arc, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        private void ApplyMiniWindowShape()
+        {
+            Region previous = Region;
+            using (GraphicsPath path = CreateRoundedWindowPath(ClientRectangle, 18))
+                Region = new Region(path);
+            if (previous != null) previous.Dispose();
+            Invalidate();
+        }
+
+        private void ClearWindowShape()
+        {
+            Region previous = Region;
+            Region = null;
+            if (previous != null) previous.Dispose();
+            Invalidate();
         }
 
         private static Dictionary<string, List<StudentInfo>> LoadClassData(string path)
@@ -1422,15 +1656,8 @@ namespace DianMingLa
             using (HistoryDialog dialog = new HistoryDialog(historyEntries))
             {
                 dialog.ShowDialog(this);
-                if (dialog.WasCleared)
-                {
-                    historyEntries.Clear();
-                    SaveHistory();
-                }
-                else if (dialog.UndoRequested)
-                {
-                    UndoLastDraw();
-                }
+                if (dialog.HistoryChanged) SaveHistory();
+                if (dialog.UndoRequested) UndoLastDraw();
             }
         }
 
@@ -1446,11 +1673,12 @@ namespace DianMingLa
             }
             selectedName = null;
             highlightedName = null;
+            ResetMiniResult(false);
             if (classes.ContainsKey(currentClass))
             {
                 currentNameLabel.Text = "已撤销";
                 currentNameLabel.ForeColor = PrimaryColor;
-                miniNameLabel.Text = "已撤销";
+                SetMiniName("已撤销", true);
                 RefreshCards();
                 UpdateProgress();
             }
@@ -1464,6 +1692,7 @@ namespace DianMingLa
             currentClass = className;
             selectedName = null;
             highlightedName = null;
+            ResetMiniResult();
             settings.LastClass = className;
 
             if (classSelector != null && !Object.Equals(classSelector.SelectedItem, className))
@@ -1496,8 +1725,6 @@ namespace DianMingLa
             resultHintLabel.Text = "准备开始点名";
             currentNameLabel.Text = "准备点名";
             currentNameLabel.ForeColor = PrimaryColor;
-            miniNameLabel.Text = "准备点名";
-            miniStatusLabel.Text = "点名啦 · " + className;
             UpdateProgress();
             SaveClassData();
             SaveSettings();
@@ -1526,11 +1753,20 @@ namespace DianMingLa
             List<StudentInfo> available = classes[currentClass].Where(s => s.Count == 0).ToList();
             if (available.Count == 0)
             {
+                if (miniPanel.Visible)
+                {
+                    ResetMiniResult(false);
+                    SetMiniName("本轮已完成", false);
+                    UpdateMiniStatus();
+                    return;
+                }
                 MessageBox.Show(this, "当前班级的学生已经全部点名完毕。\n如需重新开始，请点击“重置”。",
                     "本轮已完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
+            ResetMiniResult(false);
+            RestoreFullOpacity();
             drawing = true;
             slowingDown = false;
             selectedName = null;
@@ -1607,7 +1843,7 @@ namespace DianMingLa
 
             highlightedName = next;
             currentNameLabel.Text = next;
-            miniNameLabel.Text = next;
+            SetMiniName(next, true);
             RefreshCards();
         }
 
@@ -1645,8 +1881,9 @@ namespace DianMingLa
             currentNameLabel.Text = finalTarget;
             currentNameLabel.ForeColor = Color.FromArgb(18, 128, 92);
             resultHintLabel.Text = "本次点到";
-            miniNameLabel.Text = finalTarget;
-            miniStatusLabel.Text = currentClass + " · 本次点到";
+            SetMiniName(finalTarget, true);
+            miniResultVisible = true;
+            miniResultWatch.Restart();
 
             drawButton.Text = "继续点名";
             miniDrawButton.Text = "继续点名";
@@ -1681,6 +1918,114 @@ namespace DianMingLa
             int drawn = classes[currentClass].Count(s => s.Count > 0);
             int total = classes[currentClass].Count;
             progressLabel.Text = drawn + " / " + total;
+            UpdateMiniStatus();
+        }
+
+        private void UpdateMiniStatus()
+        {
+            if (miniStatusLabel == null || String.IsNullOrEmpty(currentClass) || !classes.ContainsKey(currentClass)) return;
+            int drawn = classes[currentClass].Count(s => s.Count > 0);
+            miniStatusLabel.Text = currentClass + " · " + drawn + " / " + classes[currentClass].Count;
+        }
+
+        private void SetMiniName(string text, bool emphasized)
+        {
+            if (miniNameLabel == null) return;
+            miniNameFading = false;
+            miniNameFadeStep = 0;
+            miniNameLabel.Text = text;
+            miniNameLabel.ForeColor = emphasized ? Color.White : Color.FromArgb(177, 192, 217);
+        }
+
+        private void ResetMiniResult()
+        {
+            ResetMiniResult(true);
+        }
+
+        private void ResetMiniResult(bool showReady)
+        {
+            miniResultWatch.Reset();
+            miniResultVisible = false;
+            if (showReady) SetMiniName("准备点名", false);
+        }
+
+        private void MiniVisualTimer_Tick(object sender, EventArgs e)
+        {
+            UpdateMiniNameExpiry(miniResultWatch.ElapsedMilliseconds);
+            AdvanceMiniNameFade();
+
+            double difference = targetMiniOpacity - Opacity;
+            if (Math.Abs(difference) < 0.01)
+            {
+                if (Opacity != targetMiniOpacity) Opacity = targetMiniOpacity;
+                return;
+            }
+            double step = difference > 0 ? 0.10 : -0.06;
+            double next = Opacity + step;
+            if ((step > 0 && next > targetMiniOpacity) || (step < 0 && next < targetMiniOpacity))
+                next = targetMiniOpacity;
+            Opacity = Math.Max(InactiveMiniOpacity, Math.Min(1.0, next));
+        }
+
+        private void UpdateMiniNameExpiry(long elapsedMilliseconds)
+        {
+            if (!miniResultVisible || elapsedMilliseconds < MiniResultDurationMilliseconds) return;
+            miniResultWatch.Reset();
+            miniResultVisible = false;
+            miniNameFading = true;
+            miniNameFadeStep = 0;
+        }
+
+        private void AdvanceMiniNameFade()
+        {
+            if (!miniNameFading || miniNameLabel == null || miniPanel == null) return;
+            miniNameFadeStep++;
+            const int totalSteps = 8;
+            if (miniNameFadeStep >= totalSteps)
+            {
+                SetMiniName("准备点名", false);
+                return;
+            }
+
+            double ratio = miniNameFadeStep / (double)totalSteps;
+            Color from = Color.White;
+            Color to = miniPanel.BackColor;
+            miniNameLabel.ForeColor = Color.FromArgb(
+                (int)Math.Round(from.R + (to.R - from.R) * ratio),
+                (int)Math.Round(from.G + (to.G - from.G) * ratio),
+                (int)Math.Round(from.B + (to.B - from.B) * ratio));
+        }
+
+        private void RestoreFullOpacity()
+        {
+            targetMiniOpacity = 1.0;
+            if (Opacity != 1.0) Opacity = 1.0;
+        }
+
+        private void MainForm_Activated(object sender, EventArgs e)
+        {
+            RestoreFullOpacity();
+        }
+
+        private void MainForm_Deactivate(object sender, EventArgs e)
+        {
+            if (miniPanel != null && miniPanel.Visible && !drawing)
+                targetMiniOpacity = InactiveMiniOpacity;
+        }
+
+        private void Mini_MouseEnter(object sender, EventArgs e)
+        {
+            RestoreFullOpacity();
+        }
+
+        private void Mini_MouseLeave(object sender, EventArgs e)
+        {
+            if (miniPanel == null || !miniPanel.Visible || drawing) return;
+            BeginInvoke(new Action(delegate
+            {
+                if (!IsDisposed && miniPanel.Visible && !Bounds.Contains(Cursor.Position) && !ContainsFocus)
+                    targetMiniOpacity = InactiveMiniOpacity;
+            }));
         }
 
         private void ResizeStudentCards()
@@ -1721,17 +2066,16 @@ namespace DianMingLa
         {
             if (String.IsNullOrEmpty(currentClass) || drawing) return;
             if (!ConfirmDialog.Confirm(this,
-                "确定要清空“" + currentClass + "”本轮的点名记录吗？",
-                "重置", "确认清空")) return;
+                "确定要重新开始“" + currentClass + "”本轮点名吗？\n历史记录将继续保留。",
+                "重新开始本轮", "重新开始")) return;
 
             foreach (StudentInfo student in classes[currentClass]) student.Count = 0;
             selectedName = null;
             highlightedName = null;
+            ResetMiniResult();
             currentNameLabel.Text = "准备点名";
             currentNameLabel.ForeColor = PrimaryColor;
             resultHintLabel.Text = "准备开始点名";
-            miniNameLabel.Text = "准备点名";
-            miniStatusLabel.Text = "点名啦 · " + currentClass;
             RefreshCards();
             UpdateProgress();
             SaveClassData();
@@ -2117,6 +2461,7 @@ namespace DianMingLa
         {
             if (miniPanel.Visible) return;
             normalBounds = Bounds;
+            RestoreFullOpacity();
             mainLayout.Visible = false;
             miniPanel.Visible = true;
             miniPanel.BringToFront();
@@ -2125,16 +2470,23 @@ namespace DianMingLa
             MaximumSize = new Size(280, 150);
             Size = new Size(280, 150);
             TopMost = true;
+            ApplyMiniWindowShape();
 
-            Screen screen = Screen.FromControl(this);
-            int x = Math.Min(Math.Max(screen.WorkingArea.Left, Left), screen.WorkingArea.Right - Width);
-            int y = Math.Min(Math.Max(screen.WorkingArea.Top, Top), screen.WorkingArea.Bottom - Height);
-            Location = new Point(x, y);
+            Point desired = settings.HasMiniPosition
+                ? new Point(settings.MiniLeft, settings.MiniTop)
+                : Location;
+            Location = ClampToVisibleWorkArea(desired, Size);
+            if (!miniResultVisible) SetMiniName("准备点名", false);
+            UpdateMiniStatus();
         }
 
         private void ExitMiniMode()
         {
             if (!miniPanel.Visible) return;
+            SaveMiniPosition();
+            ResetMiniResult();
+            RestoreFullOpacity();
+            ClearWindowShape();
             miniPanel.Visible = false;
             mainLayout.Visible = true;
             FormBorderStyle = FormBorderStyle.None;
@@ -2149,6 +2501,7 @@ namespace DianMingLa
         private void MiniDrag_MouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
+            RestoreFullOpacity();
             miniDragging = true;
             miniDragOrigin = Cursor.Position;
             formDragOrigin = Location;
@@ -2164,6 +2517,50 @@ namespace DianMingLa
         private void MiniDrag_MouseUp(object sender, MouseEventArgs e)
         {
             miniDragging = false;
+            Location = ClampToVisibleWorkArea(Location, Size);
+            SaveMiniPosition();
+            if (!ContainsFocus && !Bounds.Contains(Cursor.Position) && !drawing)
+                targetMiniOpacity = InactiveMiniOpacity;
+        }
+
+        private void SaveMiniPosition()
+        {
+            if (miniPanel == null || !miniPanel.Visible) return;
+            settings.HasMiniPosition = true;
+            settings.MiniLeft = Left;
+            settings.MiniTop = Top;
+            SaveSettings();
+        }
+
+        private static Point ClampToVisibleWorkArea(Point desired, Size size)
+        {
+            Screen screen = Screen.FromPoint(desired);
+            Rectangle area = screen.WorkingArea;
+            int x = Math.Min(Math.Max(area.Left, desired.X), Math.Max(area.Left, area.Right - size.Width));
+            int y = Math.Min(Math.Max(area.Top, desired.Y), Math.Max(area.Top, area.Bottom - size.Height));
+            return new Point(x, y);
+        }
+
+        private void SystemEvents_DisplaySettingsChanged(object sender, EventArgs e)
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try
+            {
+                BeginInvoke(new Action(delegate
+                {
+                    if (IsDisposed) return;
+                    if (miniPanel.Visible)
+                    {
+                        Location = ClampToVisibleWorkArea(Location, Size);
+                        SaveMiniPosition();
+                    }
+                    else
+                    {
+                        Location = ClampToVisibleWorkArea(Location, Size);
+                    }
+                }));
+            }
+            catch (InvalidOperationException) { }
         }
 
         private void MainForm_KeyDown(object sender, KeyEventArgs e)
@@ -2215,10 +2612,17 @@ namespace DianMingLa
                 return;
             }
 
+            SaveMiniPosition();
             SaveSettings();
             animationTimer.Stop();
             clockTimer.Stop();
+            miniVisualTimer.Stop();
             StopMusicImmediately();
+            if (displaySettingsSubscribed)
+            {
+                SystemEvents.DisplaySettingsChanged -= SystemEvents_DisplaySettingsChanged;
+                displaySettingsSubscribed = false;
+            }
             if (trayIcon != null)
             {
                 trayIcon.Visible = false;

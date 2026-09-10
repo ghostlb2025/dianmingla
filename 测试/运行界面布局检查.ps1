@@ -7,7 +7,7 @@ $source = (Get-ChildItem -LiteralPath $testDirectory -Filter '*.cs' | Select-Obj
 $testProgram = Join-Path $projectDirectory 'layout-check.exe'
 $outputArgument = '/out:' + $testProgram
 $programName = ([string][char]0x70B9) + ([string][char]0x540D) + ([string][char]0x5566)
-$application = Join-Path $projectDirectory ($programName + '.exe')
+$application = Join-Path $projectDirectory ($programName + ' V1.1.exe')
 $preview = Join-Path $testDirectory 'layout-preview.png'
 
 if (-not (Test-Path -LiteralPath $compiler)) {

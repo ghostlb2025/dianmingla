@@ -43,8 +43,8 @@ internal static class LayoutCheck
             Application.SetCompatibleTextRenderingDefault(false);
 
             Assembly assembly = Assembly.LoadFrom(args[0]);
-            bool versionPassed = assembly.GetName().Version == new Version(1, 0, 1, 0);
-            Console.WriteLine("程序版本为 1.0.1={0}", versionPassed);
+            bool versionPassed = assembly.GetName().Version == new Version(1, 1, 0, 0);
+            Console.WriteLine("程序版本为 1.1={0}", versionPassed);
             Type formType = assembly.GetType("DianMingLa.MainForm", true);
             using (Form form = (Form)Activator.CreateInstance(formType, true))
             {
@@ -264,6 +264,9 @@ internal static class LayoutCheck
                 && miniButtonsRight - miniButtonsLeft == 248
                 && miniDraw.Top == expandMini.Top
                 && miniName.Bottom <= miniDraw.Top
+                && form.Region != null
+                && !form.Region.IsVisible(new Point(0, 0))
+                && form.Region.IsVisible(new Point(form.Width / 2, form.Height / 2))
                 && Math.Abs((miniName.Left + miniName.Width / 2)
                     - (miniButtonsLeft + (miniButtonsRight - miniButtonsLeft) / 2)) <= 1;
             Console.WriteLine("迷你窗口实际 {0}×{1}（客户区 {2}×{3}），姓名中心 {4}、按钮组中心 {5}，布局通过={6}",
@@ -271,6 +274,47 @@ internal static class LayoutCheck
                 miniName.Left + miniName.Width / 2,
                 miniButtonsLeft + (miniButtonsRight - miniButtonsLeft) / 2, miniLayoutPassed);
             allPassed = allPassed && miniLayoutPassed;
+
+            Label miniStatus = formType.GetField("miniStatusLabel", BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(form) as Label;
+            FieldInfo durationField = formType.GetField("MiniResultDurationMilliseconds",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            FieldInfo inactiveOpacityField = formType.GetField("InactiveMiniOpacity",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo deactivateMini = formType.GetMethod("MainForm_Deactivate",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo activateMini = formType.GetMethod("MainForm_Activated",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo targetOpacityField = formType.GetField("targetMiniOpacity",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            deactivateMini.Invoke(form, new object[] { form, EventArgs.Empty });
+            double inactiveTarget = (double)targetOpacityField.GetValue(form);
+            activateMini.Invoke(form, new object[] { form, EventArgs.Empty });
+            double activeTarget = (double)targetOpacityField.GetValue(form);
+            bool miniBehaviorPassed = miniStatus != null && miniStatus.Text == "示例二班 · 0 / 49"
+                && (int)durationField.GetRawConstantValue() == 20000
+                && Math.Abs((double)inactiveOpacityField.GetRawConstantValue() - 0.60) < 0.001
+                && Math.Abs(inactiveTarget - 0.60) < 0.001
+                && Math.Abs(activeTarget - 1.0) < 0.001;
+            Console.WriteLine("迷你窗口20秒后回到准备状态，失焦60%且保留班级进度={0}", miniBehaviorPassed);
+            allPassed = allPassed && miniBehaviorPassed;
+
+            FieldInfo miniResultVisibleField = formType.GetField("miniResultVisible",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo expiryMethod = formType.GetMethod("UpdateMiniNameExpiry",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            miniResultVisibleField.SetValue(form, true);
+            miniName.Text = "测试姓名";
+            expiryMethod.Invoke(form, new object[] { 19999L });
+            bool beforeExpiry = miniName.Text == "测试姓名";
+            expiryMethod.Invoke(form, new object[] { 20000L });
+            MethodInfo advanceNameFade = formType.GetMethod("AdvanceMiniNameFade",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            for (int fadeStep = 0; fadeStep < 8; fadeStep++) advanceNameFade.Invoke(form, null);
+            bool expiryPassed = beforeExpiry && miniName.Text == "准备点名"
+                && !(bool)miniResultVisibleField.GetValue(form);
+            Console.WriteLine("最终姓名满20秒才切换为准备点名={0}", expiryPassed);
+            allPassed = allPassed && expiryPassed;
             using (Bitmap miniPreview = new Bitmap(form.Width, form.Height))
             {
                 form.DrawToBitmap(miniPreview, new Rectangle(Point.Empty, form.Size));
@@ -278,6 +322,9 @@ internal static class LayoutCheck
             }
             exitMiniMode.Invoke(form, null);
             Application.DoEvents();
+            bool mainShapePassed = form.Region == null;
+            Console.WriteLine("迷你窗口圆角、展开后恢复主界面直角={0}", mainShapePassed);
+            allPassed = allPassed && mainShapePassed;
 
             MethodInfo rebuildMusic = formType.GetMethod("RebuildMusicMenu", BindingFlags.Instance | BindingFlags.NonPublic);
             rebuildMusic.Invoke(form, null);
@@ -335,15 +382,90 @@ internal static class LayoutCheck
             Type historyDialogType = assembly.GetType("DianMingLa.HistoryDialog", true);
             using (Form historyDialog = (Form)Activator.CreateInstance(historyDialogType, new object[] { historySnapshot }))
             {
+                historyDialog.StartPosition = FormStartPosition.Manual;
+                historyDialog.Location = new Point(-32000, -32000);
+                historyDialog.ShowInTaskbar = false;
+                historyDialog.Show();
+                Application.DoEvents();
+                historyDialog.PerformLayout();
                 DataGridView historyGrid = FindControl<DataGridView>(historyDialog);
+                string[] historyActions = FindButtonLikeControls(historyDialog).Select(button => button.Text).ToArray();
                 bool historyDialogPassed = historyGrid != null
                     && !historyGrid.AllowUserToResizeRows
                     && historyGrid.AutoSizeRowsMode == DataGridViewAutoSizeRowsMode.None
                     && historyGrid.ColumnHeadersHeightSizeMode == DataGridViewColumnHeadersHeightSizeMode.DisableResizing
                     && historyGrid.ColumnHeadersHeight >= 34
-                    && historyGrid.RowTemplate.Height >= 30;
-                Console.WriteLine("历史表头和数据行高度充足且禁止拖动={0}", historyDialogPassed);
+                    && historyGrid.RowTemplate.Height >= 30
+                    && historyGrid.Columns.Count == 5
+                    && historyGrid.Columns[0] is DataGridViewCheckBoxColumn
+                    && historyGrid.Columns[0].HeaderText == ""
+                    && historyGrid.Columns[0].Width == 42
+                    && historyGrid.Columns[0].Resizable == DataGridViewTriState.False
+                    && historyGrid.Columns[0].SortMode == DataGridViewColumnSortMode.NotSortable
+                    && historyGrid.Columns[4].HeaderText == "状态"
+                    && historyActions.Contains("删除所选")
+                    && historyActions.Contains("撤销上次")
+                    && historyActions.Contains("导出所选")
+                    && historyActions.Contains("关闭")
+                    && !historyActions.Contains("清空记录");
+
+                IList selectionRows = historyDialogType.GetField("rows",
+                    BindingFlags.Instance | BindingFlags.NonPublic).GetValue(historyDialog) as IList;
+                if (selectionRows != null && selectionRows.Count > 0)
+                {
+                    object firstSelectionRow = selectionRows[0];
+                    firstSelectionRow.GetType().GetProperty("IsSelected").SetValue(firstSelectionRow, true, null);
+                    MethodInfo updateSelection = historyDialogType.GetMethod("UpdateSelectionState",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                    updateSelection.Invoke(historyDialog, null);
+                }
+                Label selectedCount = FindControls<Label>(historyDialog)
+                    .FirstOrDefault(label => label.Text == "已选 1 条");
+                Control deleteSelected = FindButtonLikeControls(historyDialog)
+                    .FirstOrDefault(button => button.Text == "删除所选");
+                Control exportSelected = FindButtonLikeControls(historyDialog)
+                    .FirstOrDefault(button => button.Text == "导出所选");
+                bool historySelectionPassed = selectionRows != null && selectionRows.Count > 0 && selectedCount != null
+                    && deleteSelected != null && deleteSelected.Enabled
+                    && exportSelected != null && exportSelected.Enabled;
+                object selectionHeader = historyDialogType.GetField("selectionHeader",
+                    BindingFlags.Instance | BindingFlags.NonPublic).GetValue(historyDialog);
+                CheckState partialState = (CheckState)selectionHeader.GetType()
+                    .GetProperty("CheckState").GetValue(selectionHeader, null);
+                MethodInfo headerClick = historyDialogType.GetMethod("Grid_ColumnHeaderMouseClick",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                DataGridViewCellMouseEventArgs headerArgs = new DataGridViewCellMouseEventArgs(0, -1, 10, 10,
+                    new MouseEventArgs(MouseButtons.Left, 1, 10, 10, 0));
+                headerClick.Invoke(historyDialog, new object[] { historyGrid, headerArgs });
+                CheckState allState = (CheckState)selectionHeader.GetType()
+                    .GetProperty("CheckState").GetValue(selectionHeader, null);
+                bool allRowsSelected = selectionRows.Cast<object>().All(row =>
+                    (bool)row.GetType().GetProperty("IsSelected").GetValue(row, null));
+                bool firstDisplayedRowSelected = historyGrid.Rows.Count > 0
+                    && Convert.ToBoolean(historyGrid.Rows[0].Cells[0].Value);
+                headerClick.Invoke(historyDialog, new object[] { historyGrid, headerArgs });
+                CheckState noneState = (CheckState)selectionHeader.GetType()
+                    .GetProperty("CheckState").GetValue(selectionHeader, null);
+                bool triStatePassed = partialState == CheckState.Indeterminate
+                    && allState == CheckState.Checked && allRowsSelected && firstDisplayedRowSelected
+                    && noneState == CheckState.Unchecked;
+                Console.WriteLine("历史记录首列三态勾选、状态列及底部操作={0}；逐条选择即时生效={1}",
+                    historyDialogPassed, historySelectionPassed);
+                Console.WriteLine("表头总勾选框的未选、半选、全选切换且首行同步={0}", triStatePassed);
+                Console.WriteLine("历史选择诊断：行数={0}，计数标签={1}，删除启用={2}，导出启用={3}",
+                    selectionRows == null ? 0 : selectionRows.Count,
+                    selectedCount == null ? "未找到" : selectedCount.Text,
+                    deleteSelected != null && deleteSelected.Enabled,
+                    exportSelected != null && exportSelected.Enabled);
+                using (Bitmap historyPreview = new Bitmap(historyDialog.Width, historyDialog.Height))
+                {
+                    historyDialog.DrawToBitmap(historyPreview, new Rectangle(Point.Empty, historyDialog.Size));
+                    historyPreview.Save(Path.Combine(Path.GetDirectoryName(args[1]), "history-preview.png"), ImageFormat.Png);
+                }
+                historyDialog.Hide();
                 allPassed = allPassed && historyDialogPassed;
+                allPassed = allPassed && historySelectionPassed;
+                allPassed = allPassed && triStatePassed;
             }
 
             Button minimizeButton = FindControls<Button>(form).First(button => button.Text == "\uE921");
@@ -360,13 +482,15 @@ internal static class LayoutCheck
             NotifyIcon trayIcon = trayIconField.GetValue(form) as NotifyIcon;
             ContextMenuStrip trayMenu = trayMenuField.GetValue(form) as ContextMenuStrip;
             bool closeToTrayPassed = !form.Visible && trayIcon != null && trayIcon.Visible
-                && trayMenu != null && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "打开点名啦")
+                && trayMenu != null && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "打开主界面")
+                && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "进入迷你模式")
+                && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "开机自启动")
                 && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "退出");
 
             MethodInfo restoreFromTray = formType.GetMethod("RestoreFromTray", BindingFlags.Instance | BindingFlags.NonPublic);
             restoreFromTray.Invoke(form, null);
             Application.DoEvents();
-            bool restorePassed = form.Visible && !trayIcon.Visible;
+            bool restorePassed = form.Visible && trayIcon.Visible;
             Console.WriteLine("最小化进入任务栏={0}；叉号进入托盘={1}；托盘恢复={2}",
                 minimizePassed, closeToTrayPassed, restorePassed);
             allPassed = allPassed && minimizePassed && closeToTrayPassed && restorePassed;
