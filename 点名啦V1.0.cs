@@ -16,9 +16,9 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("点名啦")]
 [assembly: AssemblyProduct("点名啦")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
-[assembly: AssemblyInformationalVersion("1.1")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyInformationalVersion("1.2")]
 
 namespace DianMingLa
 {
@@ -48,6 +48,7 @@ namespace DianMingLa
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
                     MainForm form = new MainForm(!startInTray);
+                    if (startInTray) form.StartInTray(); else form.Show();
                     IntPtr unusedHandle = form.Handle;
                     RegisteredWaitHandle listener = ThreadPool.RegisterWaitForSingleObject(showWindowEvent,
                         delegate
@@ -60,7 +61,6 @@ namespace DianMingLa
                         }, null, Timeout.Infinite, false);
 
                     ApplicationContext context = new ApplicationContext(form);
-                    if (startInTray) form.StartInTray(); else form.Show();
                     Application.Run(context);
                     listener.Unregister(null);
                 }
@@ -90,6 +90,9 @@ namespace DianMingLa
         public bool HasMiniPosition { get; set; }
         public int MiniLeft { get; set; }
         public int MiniTop { get; set; }
+        public int MiniResultDurationSeconds { get; set; }
+        public int HotKeyModifiers { get; set; }
+        public int HotKeyCode { get; set; }
 
         public AppSettings()
         {
@@ -101,6 +104,9 @@ namespace DianMingLa
             HasMiniPosition = false;
             MiniLeft = 0;
             MiniTop = 0;
+            MiniResultDurationSeconds = 60;
+            HotKeyModifiers = 1;
+            HotKeyCode = (int)Keys.R;
         }
     }
 
@@ -520,16 +526,131 @@ namespace DianMingLa
         }
     }
 
+    internal sealed class ShortcutDialog : Form
+    {
+        private readonly Label shortcutLabel;
+
+        public int HotKeyModifiers { get; private set; }
+        public Keys HotKeyCode { get; private set; }
+
+        public ShortcutDialog(int modifiers, Keys keyCode)
+        {
+            HotKeyModifiers = modifiers;
+            HotKeyCode = keyCode;
+
+            Text = "设置快捷键";
+            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ClientSize = new Size(410, 190);
+            Font = new Font("Microsoft YaHei UI", 9.5F);
+            BackColor = Color.FromArgb(243, 246, 250);
+            KeyPreview = true;
+            KeyDown += CaptureShortcut;
+
+            Label hint = new Label();
+            hint.Text = "请直接按下新的快捷键组合";
+            hint.Location = new Point(20, 18);
+            hint.Size = new Size(370, 25);
+
+            shortcutLabel = new Label();
+            shortcutLabel.Text = FormatShortcut(HotKeyModifiers, HotKeyCode);
+            shortcutLabel.TextAlign = ContentAlignment.MiddleCenter;
+            shortcutLabel.Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold);
+            shortcutLabel.BackColor = Color.White;
+            shortcutLabel.BorderStyle = BorderStyle.FixedSingle;
+            shortcutLabel.Location = new Point(20, 50);
+            shortcutLabel.Size = new Size(370, 55);
+
+            Button restoreDefault = new QuietButton();
+            restoreDefault.Text = "恢复默认";
+            restoreDefault.Location = new Point(20, 135);
+            restoreDefault.Size = new Size(90, 34);
+            restoreDefault.Click += delegate
+            {
+                HotKeyModifiers = 1;
+                HotKeyCode = Keys.R;
+                shortcutLabel.Text = FormatShortcut(HotKeyModifiers, HotKeyCode);
+            };
+
+            Button save = new QuietButton();
+            save.Text = "保存";
+            save.DialogResult = DialogResult.OK;
+            save.Location = new Point(228, 135);
+            save.Size = new Size(76, 34);
+
+            Button cancel = new QuietButton();
+            cancel.Text = "取消";
+            cancel.DialogResult = DialogResult.Cancel;
+            cancel.Location = new Point(314, 135);
+            cancel.Size = new Size(76, 34);
+
+            Controls.Add(hint);
+            Controls.Add(shortcutLabel);
+            Controls.Add(restoreDefault);
+            Controls.Add(save);
+            Controls.Add(cancel);
+            AcceptButton = save;
+            CancelButton = cancel;
+        }
+
+        private void CaptureShortcut(object sender, KeyEventArgs e)
+        {
+            int modifiers = 0;
+            if (e.Alt) modifiers |= 1;
+            if (e.Control) modifiers |= 2;
+            if (e.Shift) modifiers |= 4;
+
+            Keys key = e.KeyCode;
+            bool modifierOnly = key == Keys.Menu || key == Keys.ControlKey || key == Keys.ShiftKey
+                || key == Keys.LMenu || key == Keys.RMenu
+                || key == Keys.LControlKey || key == Keys.RControlKey
+                || key == Keys.LShiftKey || key == Keys.RShiftKey;
+            if (modifiers != 0 && !modifierOnly)
+            {
+                HotKeyModifiers = modifiers;
+                HotKeyCode = key;
+                shortcutLabel.Text = FormatShortcut(HotKeyModifiers, HotKeyCode);
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+            else if (modifierOnly)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+            }
+        }
+
+        internal static string FormatShortcut(int modifiers, Keys keyCode)
+        {
+            List<string> parts = new List<string>();
+            if ((modifiers & 2) != 0) parts.Add("Ctrl");
+            if ((modifiers & 1) != 0) parts.Add("Alt");
+            if ((modifiers & 4) != 0) parts.Add("Shift");
+            parts.Add(keyCode.ToString());
+            return String.Join(" + ", parts.ToArray());
+        }
+    }
+
     internal sealed class MainForm : Form
     {
         private const int WmNcLButtonDown = 0x00A1;
+        private const int WmHotKey = 0x0312;
         private const int HtCaption = 2;
+        private const int GlobalHotKeyId = 0xD14;
 
         [DllImport("user32.dll")]
         private static extern bool ReleaseCapture();
 
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint keyCode);
+
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr window, int id);
 
         private static readonly Color BackgroundColor = Color.FromArgb(243, 246, 250);
         private static readonly Color SurfaceColor = Color.White;
@@ -555,6 +676,7 @@ namespace DianMingLa
         private readonly System.Windows.Forms.Timer audioTimer;
         private readonly System.Windows.Forms.Timer miniVisualTimer;
         private readonly Stopwatch miniResultWatch;
+        private readonly Stopwatch miniOpacityWatch;
         private readonly System.Windows.Media.MediaPlayer mediaPlayer;
 
         private TableLayoutPanel mainLayout;
@@ -579,6 +701,8 @@ namespace DianMingLa
         private ContextMenuStrip musicMenu;
         private ContextMenuStrip trayMenu;
         private ToolStripMenuItem autoStartMenuItem;
+        private ToolStripMenuItem resultDurationMenuItem;
+        private ToolStripMenuItem shortcutMenuItem;
         private NotifyIcon trayIcon;
         private ToolTip toolTip;
         private readonly List<string> musicFiles;
@@ -611,12 +735,19 @@ namespace DianMingLa
         private bool miniNameFading;
         private int miniNameFadeStep;
         private double targetMiniOpacity;
+        private double miniOpacityStart;
+        private int miniOpacityDurationMilliseconds;
+        private bool miniOpacityUpdateScheduled;
+        private bool showWithoutActivation;
+        private bool miniFadeAfterTrayMenuClose;
+        private bool forceMiniFadeAfterTrayShow;
         private bool displaySettingsSubscribed;
+        private bool hotKeyRegistered;
 
         private const string AutoStartRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
         private const string AutoStartValueName = "点名啦";
-        private const double InactiveMiniOpacity = 0.60;
-        private const int MiniResultDurationMilliseconds = 20000;
+        private const double InactiveMiniOpacity = 0.25;
+        private const int MiniFadeOutDurationMilliseconds = 600;
 
         private readonly string baseDirectory;
         private readonly string musicDirectory;
@@ -648,6 +779,7 @@ namespace DianMingLa
             drawWatch = new Stopwatch();
             animationOrder = new List<StudentInfo>();
             settings = LoadSettings();
+            NormalizeSettings();
             initializing = true;
 
             mediaPlayer = new System.Windows.Media.MediaPlayer();
@@ -666,6 +798,7 @@ namespace DianMingLa
             audioTimer.Tick += AudioTimer_Tick;
 
             miniResultWatch = new Stopwatch();
+            miniOpacityWatch = new Stopwatch();
             miniVisualTimer = new System.Windows.Forms.Timer();
             miniVisualTimer.Interval = 40;
             miniVisualTimer.Tick += MiniVisualTimer_Tick;
@@ -693,6 +826,21 @@ namespace DianMingLa
             displaySettingsSubscribed = true;
         }
 
+        private void NormalizeSettings()
+        {
+            int[] supportedDurations = { 0, 20, 30, 60, 120 };
+            if (!supportedDurations.Contains(settings.MiniResultDurationSeconds))
+                settings.MiniResultDurationSeconds = 60;
+            if (settings.HotKeyModifiers == 1 && settings.HotKeyCode == (int)Keys.E)
+                settings.HotKeyCode = (int)Keys.R;
+            if (settings.HotKeyModifiers < 1 || settings.HotKeyModifiers > 7
+                || settings.HotKeyCode == (int)Keys.None)
+            {
+                settings.HotKeyModifiers = 1;
+                settings.HotKeyCode = (int)Keys.R;
+            }
+        }
+
         private void InitializeWindow()
         {
             Text = "点名啦";
@@ -712,6 +860,11 @@ namespace DianMingLa
             Activated += MainForm_Activated;
             Deactivate += MainForm_Deactivate;
             Shown += delegate { ActiveControl = null; };
+        }
+
+        protected override bool ShowWithoutActivation
+        {
+            get { return showWithoutActivation; }
         }
 
         private void InitializeInterface()
@@ -1273,6 +1426,10 @@ namespace DianMingLa
         {
             trayMenu = new ContextMenuStrip();
             trayMenu.Font = new Font("Microsoft YaHei UI", 9.5F);
+            trayMenu.Closed += delegate
+            {
+                if (miniFadeAfterTrayMenuClose) BeginTrayMiniFadeIfPointerOutside();
+            };
 
             ToolStripMenuItem openItem = new ToolStripMenuItem("打开主界面");
             openItem.Font = new Font(trayMenu.Font, FontStyle.Bold);
@@ -1288,6 +1445,19 @@ namespace DianMingLa
             autoStartMenuItem.Click += ToggleAutoStart;
             trayMenu.Items.Add(autoStartMenuItem);
 
+            resultDurationMenuItem = new ToolStripMenuItem("姓名显示时长");
+            AddResultDurationOption("20 秒", 20);
+            AddResultDurationOption("30 秒", 30);
+            AddResultDurationOption("1 分钟", 60);
+            AddResultDurationOption("2 分钟", 120);
+            AddResultDurationOption("一直显示", 0);
+            trayMenu.Items.Add(resultDurationMenuItem);
+
+            shortcutMenuItem = new ToolStripMenuItem();
+            shortcutMenuItem.Click += delegate { ShowShortcutDialog(); };
+            RefreshShortcutMenuText();
+            trayMenu.Items.Add(shortcutMenuItem);
+
             trayMenu.Items.Add(new ToolStripSeparator());
             ToolStripMenuItem exitItem = new ToolStripMenuItem("退出");
             exitItem.Click += delegate { RequestExit(); };
@@ -1295,10 +1465,50 @@ namespace DianMingLa
 
             trayIcon = new NotifyIcon();
             trayIcon.Icon = (Icon)(Icon ?? SystemIcons.Application).Clone();
-            trayIcon.Text = "点名啦 V1.1";
+            trayIcon.Text = "点名啦 V1.2";
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = true;
             trayIcon.DoubleClick += delegate { RestoreFromTray(); };
+        }
+
+        private void AddResultDurationOption(string text, int seconds)
+        {
+            ToolStripMenuItem item = new ToolStripMenuItem(text);
+            item.Tag = seconds;
+            item.Checked = settings.MiniResultDurationSeconds == seconds;
+            item.Click += delegate
+            {
+                settings.MiniResultDurationSeconds = seconds;
+                foreach (ToolStripMenuItem option in resultDurationMenuItem.DropDownItems.OfType<ToolStripMenuItem>())
+                    option.Checked = (int)option.Tag == seconds;
+                SaveSettings();
+            };
+            resultDurationMenuItem.DropDownItems.Add(item);
+        }
+
+        private void RefreshShortcutMenuText()
+        {
+            if (shortcutMenuItem == null) return;
+            shortcutMenuItem.Text = "设置快捷键…（"
+                + ShortcutDialog.FormatShortcut(settings.HotKeyModifiers, (Keys)settings.HotKeyCode) + "）";
+        }
+
+        private void ShowShortcutDialog()
+        {
+            using (ShortcutDialog dialog = new ShortcutDialog(settings.HotKeyModifiers, (Keys)settings.HotKeyCode))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                if (!TryApplyHotKey(dialog.HotKeyModifiers, dialog.HotKeyCode))
+                {
+                    MessageBox.Show(this, "这个快捷键已被其他软件占用，请换一个组合。",
+                        "设置快捷键", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                settings.HotKeyModifiers = dialog.HotKeyModifiers;
+                settings.HotKeyCode = (int)dialog.HotKeyCode;
+                RefreshShortcutMenuText();
+                SaveSettings();
+            }
         }
 
         internal void StartInTray()
@@ -1308,6 +1518,64 @@ namespace DianMingLa
             Hide();
         }
 
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            hotKeyRegistered = RegisterHotKey(Handle, GlobalHotKeyId,
+                (uint)settings.HotKeyModifiers, (uint)settings.HotKeyCode);
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            if (hotKeyRegistered)
+            {
+                UnregisterHotKey(Handle, GlobalHotKeyId);
+                hotKeyRegistered = false;
+            }
+            base.OnHandleDestroyed(e);
+        }
+
+        protected override void WndProc(ref Message message)
+        {
+            if (message.Msg == WmHotKey && message.WParam.ToInt32() == GlobalHotKeyId)
+            {
+                ActivateFromHotKey();
+                return;
+            }
+            base.WndProc(ref message);
+        }
+
+        private bool TryApplyHotKey(int modifiers, Keys keyCode)
+        {
+            if (!IsHandleCreated) return true;
+
+            int previousModifiers = settings.HotKeyModifiers;
+            int previousKeyCode = settings.HotKeyCode;
+            if (hotKeyRegistered)
+            {
+                UnregisterHotKey(Handle, GlobalHotKeyId);
+                hotKeyRegistered = false;
+            }
+
+            hotKeyRegistered = RegisterHotKey(Handle, GlobalHotKeyId, (uint)modifiers, (uint)keyCode);
+            if (hotKeyRegistered) return true;
+
+            hotKeyRegistered = RegisterHotKey(Handle, GlobalHotKeyId,
+                (uint)previousModifiers, (uint)previousKeyCode);
+            return false;
+        }
+
+        private void ActivateFromHotKey()
+        {
+            forceMiniFadeAfterTrayShow = false;
+            RestoreFullOpacity();
+            ShowInTaskbar = true;
+            if (!Visible) Show();
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            Activate();
+            BringToFront();
+        }
+
         internal void RestoreFromOtherInstance()
         {
             RestoreFromTray();
@@ -1315,6 +1583,7 @@ namespace DianMingLa
 
         private void HideToTray()
         {
+            forceMiniFadeAfterTrayShow = false;
             SaveMiniPosition();
             ResetMiniResult();
             if (drawing)
@@ -1360,13 +1629,31 @@ namespace DianMingLa
 
         private void ShowMiniFromTray()
         {
+            if (Visible) Hide();
             ShowInTaskbar = true;
-            Show();
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             if (!miniPanel.Visible) EnterMiniMode();
             RestoreFullOpacity();
-            Activate();
-            BringToFront();
+            showWithoutActivation = true;
+            try { Show(); }
+            finally { showWithoutActivation = false; }
+            miniFadeAfterTrayMenuClose = true;
+            if (trayMenu == null || !trayMenu.Visible) BeginTrayMiniFadeIfPointerOutside();
+        }
+
+        private void BeginTrayMiniFadeIfPointerOutside()
+        {
+            miniFadeAfterTrayMenuClose = false;
+            if (miniPanel != null && miniPanel.Visible && !drawing && !Bounds.Contains(Cursor.Position))
+            {
+                forceMiniFadeAfterTrayShow = true;
+                BeginMiniFadeOut();
+            }
+            else
+            {
+                forceMiniFadeAfterTrayShow = false;
+                ScheduleMiniOpacityUpdate();
+            }
         }
 
         private void RequestExit()
@@ -1453,20 +1740,9 @@ namespace DianMingLa
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
+            if (miniPanel != null && miniPanel.Visible) return;
             using (Pen border = new Pen(Color.FromArgb(185, 198, 218)))
-            {
-                if (miniPanel != null && miniPanel.Visible)
-                {
-                    e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                    using (GraphicsPath path = CreateRoundedWindowPath(
-                        new Rectangle(0, 0, Math.Max(1, Width - 1), Math.Max(1, Height - 1)), 18))
-                        e.Graphics.DrawPath(border, path);
-                }
-                else
-                {
-                    e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
-                }
-            }
+                e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
         }
 
         private static GraphicsPath CreateRoundedWindowPath(Rectangle bounds, int radius)
@@ -1744,6 +2020,7 @@ namespace DianMingLa
 
         private void StartDraw()
         {
+            forceMiniFadeAfterTrayShow = false;
             if (String.IsNullOrEmpty(currentClass))
             {
                 MessageBox.Show(this, "请先选择一个班级。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1897,6 +2174,7 @@ namespace DianMingLa
             SaveClassData();
             SaveHistory();
             FadeOutMusic();
+            ScheduleMiniOpacityUpdate();
         }
 
         private void RefreshCards()
@@ -1953,23 +2231,98 @@ namespace DianMingLa
         {
             UpdateMiniNameExpiry(miniResultWatch.ElapsedMilliseconds);
             AdvanceMiniNameFade();
+            if (Visible) UpdateMiniOpacityForInteraction();
+            AdvanceMiniOpacityTransition();
+        }
 
-            double difference = targetMiniOpacity - Opacity;
-            if (Math.Abs(difference) < 0.01)
+        private void BeginMiniFadeOut()
+        {
+            if (Math.Abs(targetMiniOpacity - InactiveMiniOpacity) < 0.001 && miniOpacityWatch.IsRunning)
+                return;
+            if (Opacity <= InactiveMiniOpacity + 0.001)
             {
-                if (Opacity != targetMiniOpacity) Opacity = targetMiniOpacity;
+                targetMiniOpacity = InactiveMiniOpacity;
+                Opacity = InactiveMiniOpacity;
+                miniOpacityWatch.Reset();
                 return;
             }
-            double step = difference > 0 ? 0.10 : -0.06;
-            double next = Opacity + step;
-            if ((step > 0 && next > targetMiniOpacity) || (step < 0 && next < targetMiniOpacity))
-                next = targetMiniOpacity;
-            Opacity = Math.Max(InactiveMiniOpacity, Math.Min(1.0, next));
+
+            miniOpacityStart = Opacity;
+            targetMiniOpacity = InactiveMiniOpacity;
+            double remainingRatio = (miniOpacityStart - InactiveMiniOpacity) / (1.0 - InactiveMiniOpacity);
+            miniOpacityDurationMilliseconds = Math.Max(1,
+                (int)Math.Round(MiniFadeOutDurationMilliseconds * remainingRatio));
+            miniOpacityWatch.Restart();
+        }
+
+        private void AdvanceMiniOpacityTransition()
+        {
+            if (!miniOpacityWatch.IsRunning) return;
+            double progress = Math.Min(1.0,
+                miniOpacityWatch.ElapsedMilliseconds / (double)miniOpacityDurationMilliseconds);
+            Opacity = CalculateMiniOpacity(miniOpacityStart, targetMiniOpacity, progress);
+            if (progress >= 1.0)
+            {
+                Opacity = targetMiniOpacity;
+                miniOpacityWatch.Reset();
+            }
+        }
+
+        private static double CalculateMiniOpacity(double start, double target, double progress)
+        {
+            double clamped = Math.Max(0.0, Math.Min(1.0, progress));
+            double eased = clamped * clamped * (3.0 - 2.0 * clamped);
+            return start + (target - start) * eased;
+        }
+
+        private void UpdateMiniOpacityForInteraction()
+        {
+            if (miniPanel == null || !miniPanel.Visible) return;
+            bool pointerInside = Bounds.Contains(Cursor.Position);
+            if (forceMiniFadeAfterTrayShow)
+            {
+                if (drawing || miniDragging || pointerInside)
+                {
+                    forceMiniFadeAfterTrayShow = false;
+                    RestoreFullOpacity();
+                }
+                else
+                {
+                    BeginMiniFadeOut();
+                }
+                return;
+            }
+            if (drawing || miniDragging || ContainsFocus || pointerInside)
+            {
+                RestoreFullOpacity();
+                return;
+            }
+            BeginMiniFadeOut();
+        }
+
+        private void ScheduleMiniOpacityUpdate()
+        {
+            if (miniOpacityUpdateScheduled || IsDisposed || !IsHandleCreated) return;
+            miniOpacityUpdateScheduled = true;
+            try
+            {
+                BeginInvoke(new Action(delegate
+                {
+                    miniOpacityUpdateScheduled = false;
+                    if (!IsDisposed) UpdateMiniOpacityForInteraction();
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+                miniOpacityUpdateScheduled = false;
+            }
         }
 
         private void UpdateMiniNameExpiry(long elapsedMilliseconds)
         {
-            if (!miniResultVisible || elapsedMilliseconds < MiniResultDurationMilliseconds) return;
+            if (!miniResultVisible || settings.MiniResultDurationSeconds == 0) return;
+            long durationMilliseconds = settings.MiniResultDurationSeconds * 1000L;
+            if (elapsedMilliseconds < durationMilliseconds) return;
             miniResultWatch.Reset();
             miniResultVisible = false;
             miniNameFading = true;
@@ -1999,6 +2352,7 @@ namespace DianMingLa
         private void RestoreFullOpacity()
         {
             targetMiniOpacity = 1.0;
+            miniOpacityWatch.Reset();
             if (Opacity != 1.0) Opacity = 1.0;
         }
 
@@ -2009,23 +2363,19 @@ namespace DianMingLa
 
         private void MainForm_Deactivate(object sender, EventArgs e)
         {
-            if (miniPanel != null && miniPanel.Visible && !drawing)
-                targetMiniOpacity = InactiveMiniOpacity;
+            ScheduleMiniOpacityUpdate();
         }
 
         private void Mini_MouseEnter(object sender, EventArgs e)
         {
+            forceMiniFadeAfterTrayShow = false;
             RestoreFullOpacity();
         }
 
         private void Mini_MouseLeave(object sender, EventArgs e)
         {
             if (miniPanel == null || !miniPanel.Visible || drawing) return;
-            BeginInvoke(new Action(delegate
-            {
-                if (!IsDisposed && miniPanel.Visible && !Bounds.Contains(Cursor.Position) && !ContainsFocus)
-                    targetMiniOpacity = InactiveMiniOpacity;
-            }));
+            ScheduleMiniOpacityUpdate();
         }
 
         private void ResizeStudentCards()
@@ -2465,6 +2815,7 @@ namespace DianMingLa
             mainLayout.Visible = false;
             miniPanel.Visible = true;
             miniPanel.BringToFront();
+            Padding = Padding.Empty;
             FormBorderStyle = FormBorderStyle.None;
             MinimumSize = new Size(280, 150);
             MaximumSize = new Size(280, 150);
@@ -2483,12 +2834,14 @@ namespace DianMingLa
         private void ExitMiniMode()
         {
             if (!miniPanel.Visible) return;
+            forceMiniFadeAfterTrayShow = false;
             SaveMiniPosition();
             ResetMiniResult();
             RestoreFullOpacity();
             ClearWindowShape();
             miniPanel.Visible = false;
             mainLayout.Visible = true;
+            Padding = new Padding(1);
             FormBorderStyle = FormBorderStyle.None;
             MaximumSize = Size.Empty;
             MinimumSize = Size.Empty;
@@ -2501,6 +2854,7 @@ namespace DianMingLa
         private void MiniDrag_MouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
+            forceMiniFadeAfterTrayShow = false;
             RestoreFullOpacity();
             miniDragging = true;
             miniDragOrigin = Cursor.Position;
@@ -2519,8 +2873,7 @@ namespace DianMingLa
             miniDragging = false;
             Location = ClampToVisibleWorkArea(Location, Size);
             SaveMiniPosition();
-            if (!ContainsFocus && !Bounds.Contains(Cursor.Position) && !drawing)
-                targetMiniOpacity = InactiveMiniOpacity;
+            UpdateMiniOpacityForInteraction();
         }
 
         private void SaveMiniPosition()

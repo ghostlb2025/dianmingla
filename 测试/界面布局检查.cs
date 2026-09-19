@@ -43,8 +43,8 @@ internal static class LayoutCheck
             Application.SetCompatibleTextRenderingDefault(false);
 
             Assembly assembly = Assembly.LoadFrom(args[0]);
-            bool versionPassed = assembly.GetName().Version == new Version(1, 1, 0, 0);
-            Console.WriteLine("程序版本为 1.1={0}", versionPassed);
+            bool versionPassed = assembly.GetName().Version == new Version(1, 2, 0, 0);
+            Console.WriteLine("程序版本为 1.2={0}", versionPassed);
             Type formType = assembly.GetType("DianMingLa.MainForm", true);
             using (Form form = (Form)Activator.CreateInstance(formType, true))
             {
@@ -256,11 +256,14 @@ internal static class LayoutCheck
             Application.DoEvents();
             Control miniDraw = formType.GetField("miniDrawButton", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) as Control;
             Label miniName = formType.GetField("miniNameLabel", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) as Label;
+            Control miniPanel = formType.GetField("miniPanel", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) as Control;
             Control expandMini = FindButtonLikeControls(form).FirstOrDefault(button => button.Text == "展开");
             int miniButtonsLeft = Math.Min(miniDraw.Left, expandMini.Left);
             int miniButtonsRight = Math.Max(miniDraw.Right, expandMini.Right);
             bool miniLayoutPassed = form.Size == new Size(280, 150)
                 && miniDraw != null && expandMini != null && miniName != null
+                && miniPanel != null && miniPanel.Bounds == form.ClientRectangle
+                && form.Padding == Padding.Empty
                 && miniButtonsRight - miniButtonsLeft == 248
                 && miniDraw.Top == expandMini.Top
                 && miniName.Bottom <= miniDraw.Top
@@ -277,26 +280,50 @@ internal static class LayoutCheck
 
             Label miniStatus = formType.GetField("miniStatusLabel", BindingFlags.Instance | BindingFlags.NonPublic)
                 .GetValue(form) as Label;
-            FieldInfo durationField = formType.GetField("MiniResultDurationMilliseconds",
-                BindingFlags.Static | BindingFlags.NonPublic);
+            FieldInfo settingsField = formType.GetField("settings", BindingFlags.Instance | BindingFlags.NonPublic);
+            object appSettings = settingsField.GetValue(form);
+            PropertyInfo durationProperty = appSettings.GetType().GetProperty("MiniResultDurationSeconds");
+            PropertyInfo hotKeyModifiersProperty = appSettings.GetType().GetProperty("HotKeyModifiers");
+            PropertyInfo hotKeyCodeProperty = appSettings.GetType().GetProperty("HotKeyCode");
             FieldInfo inactiveOpacityField = formType.GetField("InactiveMiniOpacity",
                 BindingFlags.Static | BindingFlags.NonPublic);
-            MethodInfo deactivateMini = formType.GetMethod("MainForm_Deactivate",
+            FieldInfo fadeDurationField = formType.GetField("MiniFadeOutDurationMilliseconds",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo calculateOpacity = formType.GetMethod("CalculateMiniOpacity",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            MethodInfo beginMiniFadeOut = formType.GetMethod("BeginMiniFadeOut",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo scheduleOpacityUpdate = formType.GetMethod("ScheduleMiniOpacityUpdate",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo opacityUpdateScheduledField = formType.GetField("miniOpacityUpdateScheduled",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             MethodInfo activateMini = formType.GetMethod("MainForm_Activated",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             FieldInfo targetOpacityField = formType.GetField("targetMiniOpacity",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            deactivateMini.Invoke(form, new object[] { form, EventArgs.Empty });
+            beginMiniFadeOut.Invoke(form, null);
             double inactiveTarget = (double)targetOpacityField.GetValue(form);
+            double opacityAtFadeStart = form.Opacity;
             activateMini.Invoke(form, new object[] { form, EventArgs.Empty });
             double activeTarget = (double)targetOpacityField.GetValue(form);
+            double opacityAtHalf = (double)calculateOpacity.Invoke(null, new object[] { 1.0, 0.25, 0.5 });
+            scheduleOpacityUpdate.Invoke(form, null);
+            scheduleOpacityUpdate.Invoke(form, null);
+            bool opacityUpdateQueued = (bool)opacityUpdateScheduledField.GetValue(form);
+            Application.DoEvents();
+            bool opacityUpdateHandled = !(bool)opacityUpdateScheduledField.GetValue(form);
             bool miniBehaviorPassed = miniStatus != null && miniStatus.Text == "示例二班 · 0 / 49"
-                && (int)durationField.GetRawConstantValue() == 20000
-                && Math.Abs((double)inactiveOpacityField.GetRawConstantValue() - 0.60) < 0.001
-                && Math.Abs(inactiveTarget - 0.60) < 0.001
+                && (int)durationProperty.GetValue(appSettings, null) == 60
+                && (int)hotKeyModifiersProperty.GetValue(appSettings, null) == 1
+                && (int)hotKeyCodeProperty.GetValue(appSettings, null) == (int)Keys.R
+                && Math.Abs((double)inactiveOpacityField.GetRawConstantValue() - 0.25) < 0.001
+                && (int)fadeDurationField.GetRawConstantValue() == 600
+                && Math.Abs(inactiveTarget - 0.25) < 0.001
+                && Math.Abs(opacityAtFadeStart - 1.0) < 0.001
+                && opacityAtHalf > 0.25 && opacityAtHalf < 1.0
+                && opacityUpdateQueued && opacityUpdateHandled
                 && Math.Abs(activeTarget - 1.0) < 0.001;
-            Console.WriteLine("迷你窗口20秒后回到准备状态，失焦60%且保留班级进度={0}", miniBehaviorPassed);
+            Console.WriteLine("迷你窗口默认60秒、600毫秒平滑降至25%、默认Alt+R且保留班级进度={0}", miniBehaviorPassed);
             allPassed = allPassed && miniBehaviorPassed;
 
             FieldInfo miniResultVisibleField = formType.GetField("miniResultVisible",
@@ -305,15 +332,15 @@ internal static class LayoutCheck
                 BindingFlags.Instance | BindingFlags.NonPublic);
             miniResultVisibleField.SetValue(form, true);
             miniName.Text = "测试姓名";
-            expiryMethod.Invoke(form, new object[] { 19999L });
+            expiryMethod.Invoke(form, new object[] { 59999L });
             bool beforeExpiry = miniName.Text == "测试姓名";
-            expiryMethod.Invoke(form, new object[] { 20000L });
+            expiryMethod.Invoke(form, new object[] { 60000L });
             MethodInfo advanceNameFade = formType.GetMethod("AdvanceMiniNameFade",
                 BindingFlags.Instance | BindingFlags.NonPublic);
             for (int fadeStep = 0; fadeStep < 8; fadeStep++) advanceNameFade.Invoke(form, null);
             bool expiryPassed = beforeExpiry && miniName.Text == "准备点名"
                 && !(bool)miniResultVisibleField.GetValue(form);
-            Console.WriteLine("最终姓名满20秒才切换为准备点名={0}", expiryPassed);
+            Console.WriteLine("最终姓名满60秒才切换为准备点名={0}", expiryPassed);
             allPassed = allPassed && expiryPassed;
             using (Bitmap miniPreview = new Bitmap(form.Width, form.Height))
             {
@@ -322,8 +349,8 @@ internal static class LayoutCheck
             }
             exitMiniMode.Invoke(form, null);
             Application.DoEvents();
-            bool mainShapePassed = form.Region == null;
-            Console.WriteLine("迷你窗口圆角、展开后恢复主界面直角={0}", mainShapePassed);
+            bool mainShapePassed = form.Region == null && form.Padding == new Padding(1);
+            Console.WriteLine("迷你窗口无浅色边框、展开后恢复主界面边框={0}", mainShapePassed);
             allPassed = allPassed && mainShapePassed;
 
             MethodInfo rebuildMusic = formType.GetMethod("RebuildMusicMenu", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -337,8 +364,8 @@ internal static class LayoutCheck
             Console.WriteLine("菜单式音乐={0}；班级下拉选择且启动无蓝色焦点={1}", musicMenuPassed, classSelectorPassed);
             allPassed = allPassed && musicMenuPassed && classSelectorPassed;
 
-            FieldInfo settingsField = formType.GetField("settings", BindingFlags.Instance | BindingFlags.NonPublic);
-            object settings = settingsField.GetValue(form);
+            FieldInfo musicSettingsField = formType.GetField("settings", BindingFlags.Instance | BindingFlags.NonPublic);
+            object settings = musicSettingsField.GetValue(form);
             settings.GetType().GetProperty("MusicEnabled").SetValue(settings, false, null);
             MethodInfo startDraw = formType.GetMethod("StartDraw", BindingFlags.Instance | BindingFlags.NonPublic);
             MethodInfo finishDraw = formType.GetMethod("FinishDraw", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -474,6 +501,54 @@ internal static class LayoutCheck
             bool minimizePassed = form.Visible && form.WindowState == FormWindowState.Minimized;
             form.WindowState = FormWindowState.Normal;
 
+            MethodInfo startInTray = formType.GetMethod("StartInTray", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo showMiniFromTray = formType.GetMethod("ShowMiniFromTray", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo restoreFromTray = formType.GetMethod("RestoreFromTray", BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo activateFromHotKey = formType.GetMethod("ActivateFromHotKey", BindingFlags.Instance | BindingFlags.NonPublic);
+            Rectangle cursorArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+            int testMiniLeft = Cursor.Position.X < cursorArea.Left + cursorArea.Width / 2
+                ? cursorArea.Right - 300 : cursorArea.Left + 20;
+            int testMiniTop = Cursor.Position.Y < cursorArea.Top + cursorArea.Height / 2
+                ? cursorArea.Bottom - 170 : cursorArea.Top + 20;
+            appSettings.GetType().GetProperty("HasMiniPosition").SetValue(appSettings, true, null);
+            appSettings.GetType().GetProperty("MiniLeft").SetValue(appSettings, testMiniLeft, null);
+            appSettings.GetType().GetProperty("MiniTop").SetValue(appSettings, testMiniTop, null);
+            System.Windows.Forms.Timer miniVisualTimer = formType.GetField("miniVisualTimer",
+                BindingFlags.Instance | BindingFlags.NonPublic).GetValue(form) as System.Windows.Forms.Timer;
+            FieldInfo forceTrayFadeField = formType.GetField("forceMiniFadeAfterTrayShow",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            miniVisualTimer.Stop();
+            showMiniFromTray.Invoke(form, null);
+            Application.DoEvents();
+            bool visibleTrayMiniFadePassed = form.Visible && miniPanel.Visible
+                && (bool)forceTrayFadeField.GetValue(form)
+                && Math.Abs((double)targetOpacityField.GetValue(form) - 0.25) < 0.001;
+            restoreFromTray.Invoke(form, null);
+            startInTray.Invoke(form, null);
+            Application.DoEvents();
+            bool startInTrayPassed = !form.Visible && !form.ShowInTaskbar;
+            showMiniFromTray.Invoke(form, null);
+            Application.DoEvents();
+            bool hiddenTrayMiniFadePassed = form.Visible && miniPanel.Visible
+                && (bool)forceTrayFadeField.GetValue(form)
+                && Math.Abs((double)targetOpacityField.GetValue(form) - 0.25) < 0.001;
+            MethodInfo miniVisualTick = formType.GetMethod("MiniVisualTimer_Tick",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            MethodInfo miniMouseEnter = formType.GetMethod("Mini_MouseEnter",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            miniVisualTick.Invoke(form, new object[] { form, EventArgs.Empty });
+            bool trayFadeCalibrationPassed = Math.Abs((double)targetOpacityField.GetValue(form) - 0.25) < 0.001;
+            miniMouseEnter.Invoke(form, new object[] { form, EventArgs.Empty });
+            bool trayInteractionRestorePassed = !(bool)forceTrayFadeField.GetValue(form)
+                && Math.Abs((double)targetOpacityField.GetValue(form) - 1.0) < 0.001;
+            restoreFromTray.Invoke(form, null);
+            startInTray.Invoke(form, null);
+            Application.DoEvents();
+            activateFromHotKey.Invoke(form, null);
+            Application.DoEvents();
+            bool hotKeyRestorePassed = form.Visible && form.ShowInTaskbar;
+            miniVisualTimer.Start();
+
             Button closeButton = FindControls<Button>(form).First(button => button.Text == "\uE8BB");
             closeButton.PerformClick();
             Application.DoEvents();
@@ -485,15 +560,33 @@ internal static class LayoutCheck
                 && trayMenu != null && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "打开主界面")
                 && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "进入迷你模式")
                 && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "开机自启动")
+                && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "姓名显示时长")
+                && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text.Contains("Alt + R"))
                 && trayMenu.Items.Cast<ToolStripItem>().Any(item => item.Text == "退出");
 
-            MethodInfo restoreFromTray = formType.GetMethod("RestoreFromTray", BindingFlags.Instance | BindingFlags.NonPublic);
+            ToolStripMenuItem durationMenu = trayMenu.Items.Cast<ToolStripItem>()
+                .OfType<ToolStripMenuItem>().First(item => item.Text == "姓名显示时长");
+            bool durationMenuPassed = durationMenu.DropDownItems.Cast<ToolStripItem>().Count() == 5
+                && durationMenu.DropDownItems.Cast<ToolStripMenuItem>()
+                    .Single(item => item.Text == "1 分钟").Checked;
+            ToolStripMenuItem twoMinuteOption = durationMenu.DropDownItems.Cast<ToolStripMenuItem>()
+                .Single(item => item.Text == "2 分钟");
+            twoMinuteOption.PerformClick();
+            bool durationChangePassed = twoMinuteOption.Checked
+                && (int)durationProperty.GetValue(appSettings, null) == 120
+                && File.ReadAllText(settingsPath).Contains("\"MiniResultDurationSeconds\":120");
+
             restoreFromTray.Invoke(form, null);
             Application.DoEvents();
             bool restorePassed = form.Visible && trayIcon.Visible;
-            Console.WriteLine("最小化进入任务栏={0}；叉号进入托盘={1}；托盘恢复={2}",
-                minimizePassed, closeToTrayPassed, restorePassed);
-            allPassed = allPassed && minimizePassed && closeToTrayPassed && restorePassed;
+            Console.WriteLine("最小化进入任务栏={0}；开机静默托盘={1}；可见窗口从托盘进入迷你后自动透明={2}；隐藏窗口从托盘进入迷你后自动透明={3}；周期校准保持透明={4}；鼠标进入恢复清晰={5}；Alt+R唤出={6}；叉号进入托盘={7}；托盘恢复={8}；时长菜单={9}；时长保存={10}",
+                minimizePassed, startInTrayPassed, visibleTrayMiniFadePassed, hiddenTrayMiniFadePassed,
+                trayFadeCalibrationPassed, trayInteractionRestorePassed, hotKeyRestorePassed,
+                closeToTrayPassed, restorePassed, durationMenuPassed, durationChangePassed);
+            allPassed = allPassed && minimizePassed && startInTrayPassed
+                && visibleTrayMiniFadePassed && hiddenTrayMiniFadePassed
+                && trayFadeCalibrationPassed && trayInteractionRestorePassed && hotKeyRestorePassed
+                && closeToTrayPassed && restorePassed && durationMenuPassed && durationChangePassed;
 
             closeButton.PerformClick();
             Application.DoEvents();
